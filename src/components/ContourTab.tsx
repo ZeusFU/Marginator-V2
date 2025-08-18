@@ -4,6 +4,7 @@ import { calculateMargins } from '../utils/calculations'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Scatter } from 'react-chartjs-2'
 import { exportContourAsCSV, exportContourAsJSON, ContourExportPoint } from '../utils/export'
+import AssistantDrawer from './AssistantDrawer'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
@@ -287,6 +288,8 @@ function ContourTab() {
     resetAxisIfChanged('y', v)
   }
 
+  const [assistantOpen, setAssistantOpen] = useState(false)
+
   return (
     <div className="p-6">
       <h2 className="text-2xl font-bold mb-6">Contour Analysis</h2>
@@ -389,14 +392,7 @@ function ContourTab() {
           >Export JSON</button>
         </div>
         <div className="flex-1" />
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <input
-            type="text"
-            placeholder="Assistant: e.g. 'target 45', 'x 100 400', 'ptr'"
-            className="flex-1 md:w-96 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
-            onKeyDown={(e) => { if (e.key === 'Enter') handleAssistantCommand((e.target as HTMLInputElement).value) }}
-          />
-        </div>
+        <button onClick={() => setAssistantOpen(true)} className="px-3 py-2 rounded-md bg-neutral-800 text-white text-sm border border-border">Open AI Assistant</button>
       </div>
 
       {/* Data Summary */}
@@ -409,6 +405,25 @@ function ContourTab() {
           </p>
         )}
       </div>
+
+      <AssistantDrawer
+        isOpen={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        xVariable={xVariable}
+        yVariable={yVariable}
+        setXVariable={setXVariable}
+        setYVariable={setYVariable}
+        xMin={xMin}
+        xMax={xMax}
+        yMin={yMin}
+        yMax={yMax}
+        setXMin={setXMin}
+        setXMax={setXMax}
+        setYMin={setYMin}
+        setYMax={setYMax}
+        targetMargin={targetMarginValue}
+        setTargetMarginString={setTargetMargin}
+      />
     </div>
   )
 }
