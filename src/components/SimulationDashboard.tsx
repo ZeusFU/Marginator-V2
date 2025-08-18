@@ -330,7 +330,7 @@ export default SimulationDashboard
 
 // Dynamic thresholds panel with user-controlled margin target
 function ThresholdsPanel({ results }: { results: any }) {
-  const { chartMarginTarget, setChartMarginTarget } = useSimulationContext()
+  const { chartMarginTarget, setChartMarginTarget, runSimulation } = useSimulationContext()
   const [targetPercent, setTargetPercent] = useState<string>(String(chartMarginTarget))
 
   const target = useMemo(() => {
@@ -350,13 +350,21 @@ function ThresholdsPanel({ results }: { results: any }) {
       (results?.purchaseToPayoutRateData?.priceMargins || []).map((p: number) => p / 100),
       target / 100
     )
-    const avgPayout = computeThreshold(
+    // Ensure we use the latest recomputed series; fall back to interpolation on a widened window if needed
+    let avgPayout = computeThreshold(
       results?.averagePayoutData?.values || [],
       (results?.averagePayoutData?.priceMargins || []).map((p: number) => p / 100),
       target / 100
     )
+    if (avgPayout === null && Array.isArray(results?.averagePayoutData?.values) && results?.averagePayoutData?.values.length > 1) {
+      // Fallback: approximate by smoothing margins and re-running threshold
+      const vals = results.averagePayoutData.values
+      const margins = (results.averagePayoutData.priceMargins as number[]).map(p => p / 100)
+      const smoothed = smoothSeries(margins)
+      avgPayout = computeThreshold(vals, smoothed, target / 100)
+    }
     return { evalPrice, ptr, avgPayout }
-  }, [results, target])
+  }, [results?.evaluationPriceData, results?.purchaseToPayoutRateData, results?.averagePayoutData, target])
 
   return (
     <div className="thresholds-card p-4 border border-border rounded-lg bg-background/60 mt-4">
@@ -374,7 +382,12 @@ function ThresholdsPanel({ results }: { results: any }) {
               onChange={(e) => {
                 setTargetPercent(e.target.value)
                 const n = parseFloat(e.target.value)
-                if (Number.isFinite(n)) setChartMarginTarget(Math.min(100, Math.max(0.1, n)))
+                if (Number.isFinite(n)) {
+                  const clamped = Math.min(100, Math.max(0.1, n))
+                  setChartMarginTarget(clamped)
+                  // Recompute datasets centered around new target for accurate thresholds
+                  runSimulation()
+                }
               }}
               className="bg-card border border-border rounded w-28 sm:text-sm text-text_primary py-1.5 px-3"
             />
@@ -480,4 +493,19 @@ function computeThreshold(values: number[], margins: number[], target: number): 
     if (d < minDiff) { minDiff = d; xAtMin = values[i] }
   }
   return xAtMin
+}
+
+function smoothSeries(arr: number[], window = 3): number[] {
+  if (!Array.isArray(arr) || arr.length === 0) return []
+  const w = Math.max(1, Math.min(window, 7))
+  const out: number[] = []
+  for (let i = 0; i < arr.length; i++) {
+    let sum = 0, cnt = 0
+    for (let k = -Math.floor(w/2); k <= Math.floor(w/2); k++) {
+      const idx = i + k
+      if (idx >= 0 && idx < arr.length) { sum += arr[idx]; cnt++ }
+    }
+    out.push(sum / cnt)
+  }
+  return out
 }
