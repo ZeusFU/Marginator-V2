@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useSimulationContext } from '../context/SimulationContext'
 import { SAMPLE_SIZE, MarginCalculationResult, ExactThresholdItem } from '../utils/types'
 import ComparisonPlanCard from './ComparisonPlanCard'
@@ -272,25 +272,98 @@ export function SimulationDashboard() {
       </div>
       
       {/* Thresholds */}
-      <div className="thresholds-card p-4 border border-border rounded-lg bg-background/60 mt-4">
-        <h2 className="text-sm font-medium text-text_secondary mb-3">50% Margin Thresholds</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {formattedThresholds.map((threshold: ThresholdItem, index: number) => (
-            <div key={index} className="threshold-item">
-              <span className="text-xs text-text_secondary block">{threshold?.name || 'Unknown'}</span>
-              <span className="font-medium">
-                {threshold?.pmValue !== null && threshold?.pmValue !== undefined
-                  ? threshold?.name?.includes('Rate') 
-                    ? formatPercent(threshold.pmValue)
-                    : formatCurrency(threshold.pmValue)
-                  : 'N/A'}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <ThresholdsPanel results={results} />
     </div>
   )
 }
 
 export default SimulationDashboard 
+
+// Dynamic thresholds panel with user-controlled margin target
+function ThresholdsPanel({ results }: { results: any }) {
+  const [targetPercent, setTargetPercent] = useState<string>('50')
+
+  const target = useMemo(() => {
+    const n = parseFloat(targetPercent)
+    if (!Number.isFinite(n)) return 50
+    return Math.min(100, Math.max(0.1, n))
+  }, [targetPercent])
+
+  const thresholds = useMemo(() => {
+    const evalPrice = computeThreshold(
+      results?.evaluationPriceData?.values || [],
+      (results?.evaluationPriceData?.priceMargins || []).map((p: number) => p / 100),
+      target / 100
+    )
+    const ptr = computeThreshold(
+      results?.purchaseToPayoutRateData?.values || [],
+      (results?.purchaseToPayoutRateData?.priceMargins || []).map((p: number) => p / 100),
+      target / 100
+    )
+    const avgPayout = computeThreshold(
+      results?.averagePayoutData?.values || [],
+      (results?.averagePayoutData?.priceMargins || []).map((p: number) => p / 100),
+      target / 100
+    )
+    return { evalPrice, ptr, avgPayout }
+  }, [results, target])
+
+  return (
+    <div className="thresholds-card p-4 border border-border rounded-lg bg-background/60 mt-4">
+      <div className="flex items-end justify-between mb-3 gap-3">
+        <h2 className="text-sm font-medium text-text_secondary">{target}% Margin Thresholds</h2>
+        <div>
+          <label className="block text-xs font-medium text-text_secondary mb-1">Target Margin</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0.1}
+              max={100}
+              step={0.1}
+              value={targetPercent}
+              onChange={(e) => setTargetPercent(e.target.value)}
+              className="bg-card border border-border rounded w-28 sm:text-sm text-text_primary py-1.5 px-3"
+            />
+            <span className="text-xs text-text_secondary">%</span>
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <ThresholdItem label="Evaluation Price" value={thresholds.evalPrice} isRate={false} />
+        <ThresholdItem label="Purchase to Payout Rate" value={thresholds.ptr} isRate={true} />
+        <ThresholdItem label="Average Payout" value={thresholds.avgPayout} isRate={false} />
+      </div>
+    </div>
+  )
+}
+
+function ThresholdItem({ label, value, isRate }: { label: string; value: number | null; isRate: boolean }) {
+  const formatted = value === null ? 'N/A' : (isRate ? `${(value * 100).toFixed(2)}%` : `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`)
+  return (
+    <div className="threshold-item">
+      <span className="text-xs text-text_secondary block">{label}</span>
+      <span className="font-medium">{formatted}</span>
+    </div>
+  )
+}
+
+function computeThreshold(values: number[], margins: number[], target: number): number | null {
+  if (!Array.isArray(values) || !Array.isArray(margins) || values.length !== margins.length || values.length === 0) return null
+  let threshold: number | null = null
+  for (let i = 0; i < values.length; i++) {
+    const m = margins[i]
+    if (m <= target) {
+      if (m === target) return values[i]
+      if (i > 0) {
+        const y1 = margins[i - 1]
+        const y2 = margins[i]
+        const x1 = values[i - 1]
+        const x2 = values[i]
+        if (y1 !== y2) threshold = x1 + (x2 - x1) * (target - y1) / (y2 - y1)
+        else threshold = x1
+      } else threshold = values[i]
+      break
+    }
+  }
+  return threshold
+}
