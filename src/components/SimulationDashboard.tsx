@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import { Copy as CopyIcon, Check } from 'lucide-react'
 import { useSimulationContext } from '../context/SimulationContext'
 import { SAMPLE_SIZE, MarginCalculationResult, ExactThresholdItem } from '../utils/types'
 import ComparisonPlanCard from './ComparisonPlanCard'
@@ -111,6 +112,7 @@ export function SimulationDashboard() {
   const purchaseToPayoutRateDec = (safeInputs.evalPassRate / 100) * (safeInputs.simFundedRate / 100)
 
   // Copy overall summary, including thresholds for current global target
+  const [overallCopied, setOverallCopied] = useState(false)
   const handleCopyOverall = () => {
     const target = chartMarginTarget
     const evalPriceThreshold = computeThreshold(
@@ -142,6 +144,8 @@ export function SimulationDashboard() {
     lines.push(`Purchase to Payout = ${ptrThreshold === null ? 'N/A' : (ptrThreshold * 100).toFixed(2)}%`)
     lines.push(`Avg. Payout = ${avgPayoutThreshold === null ? 'N/A' : `$${avgPayoutThreshold.toFixed(2)}`}`)
     navigator.clipboard.writeText(lines.join('\n'))
+    setOverallCopied(true)
+    window.setTimeout(() => setOverallCopied(false), 1200)
   }
   
   // For comparison mode
@@ -193,7 +197,14 @@ export function SimulationDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={handleCopyOverall} className="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 text-xs font-medium">Copy</button>
+            <button
+              onClick={handleCopyOverall}
+              aria-label="Copy summary"
+              className={`p-2 rounded-md bg-white/10 hover:bg-white/20 transition-colors ${overallCopied ? 'text-green-300' : 'text-white'}`}
+              title="Copy"
+            >
+              {overallCopied ? <Check className="w-4 h-4 transition-transform" /> : <CopyIcon className="w-4 h-4" />}
+            </button>
             <div className="text-right">
               <span className="text-xs font-medium text-white/80">Net Revenue</span>
               <div className="text-lg font-bold">{formatCurrency(safeMargin.netRevenue)}</div>
@@ -392,9 +403,7 @@ function ThresholdsPanel({ results }: { results: any }) {
         </div>
       </div>
       <div className="mt-3">
-        <button className="px-3 py-1.5 rounded-md border border-border text-xs" onClick={() => copyAllThresholds(thresholds, target)}>
-          Copy All Thresholds
-        </button>
+        <CopyAllButton onClick={() => copyAllThresholds(thresholds, target)} />
       </div>
     </div>
   )
@@ -427,6 +436,20 @@ function copyAllThresholds(t: { evalPrice: number | null; ptr: number | null; av
   lines.push(`Purchase to Payout = ${t.ptr === null ? 'N/A' : `${(t.ptr * 100).toFixed(2)}%`}`)
   lines.push(`Avg. Payout = ${t.avgPayout === null ? 'N/A' : `$${t.avgPayout.toFixed(2)}`}`)
   navigator.clipboard.writeText(lines.join('\n'))
+}
+
+function CopyAllButton({ onClick }: { onClick: () => void }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => { onClick(); setCopied(true); window.setTimeout(() => setCopied(false), 1200) }}
+      aria-label="Copy thresholds"
+      className={`p-2 rounded-md border border-border transition-colors ${copied ? 'text-green-600 border-green-600' : 'text-text_secondary'}`}
+      title="Copy thresholds"
+    >
+      {copied ? <Check className="w-4 h-4" /> : <CopyIcon className="w-4 h-4" />}
+    </button>
+  )
 }
 
 function computeThreshold(values: number[], margins: number[], target: number): number | null {
