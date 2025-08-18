@@ -40,8 +40,10 @@ function ContourTab() {
       avgPayout: toNum(inputs.avgPayout, 5000),
       useActivationFee: !!inputs.useActivationFee,
       activationFee: toNum(inputs.activationFee, 200),
-      evalPassRate: toNum(inputs.evalPassRate, 0.1),
-      avgLiveSaved: toNum(inputs.avgLiveSaved, 2500),
+      // evalPassRate is entered as %, convert to decimal
+      evalPassRate: toNum(inputs.evalPassRate, 10) / 100,
+      // avgLiveSaved is a percentage 0..100
+      avgLiveSaved: toNum(inputs.avgLiveSaved, 0),
       avgLivePayout: toNum(inputs.avgLivePayout, 7500),
       includeLive: !!inputs.includeLive,
       userFeePerAccount: toNum(inputs.userFeePerAccount, 5.83),
@@ -74,7 +76,7 @@ function ContourTab() {
     }
 
     const datasets: any[] = []
-    const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6']
+    const colors = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#7c3aed', '#0ea5e9', '#ef4444']
 
     allTargets.forEach((targetMargin, index) => {
       const points: { x: number; y: number }[] = []
@@ -82,10 +84,10 @@ function ContourTab() {
       // Define variable ranges based on the selected variables
       const getVariableRange = (varName: string) => {
         switch (varName) {
-          case 'evalPrice': return { min: 50, max: 500, steps: 25 }
-          case 'purchaseToPayoutRate': return { min: 0.1, max: 1.0, steps: 25 }
-          case 'avgPayout': return { min: 1000, max: 15000, steps: 25 }
-          case 'avgLivePayout': return { min: 1000, max: 20000, steps: 25 }
+          case 'evalPrice': return { min: 50, max: 500, steps: 40 }
+          case 'purchaseToPayoutRate': return { min: 0.05, max: 1.0, steps: 40 }
+          case 'avgPayout': return { min: 1000, max: 15000, steps: 40 }
+          case 'avgLivePayout': return { min: 1000, max: 20000, steps: 40 }
           default: return { min: 0, max: 100, steps: 25 }
         }
       }
@@ -93,49 +95,53 @@ function ContourTab() {
       const xRange = getVariableRange(xVariable)
       const yRange = getVariableRange(yVariable)
 
-      // Grid sampling to find contour points
-      for (let i = 0; i <= xRange.steps; i++) {
-        for (let j = 0; j <= yRange.steps; j++) {
-          const xValue = xRange.min + (xRange.max - xRange.min) * (i / xRange.steps)
-          const yValue = yRange.min + (yRange.max - yRange.min) * (j / yRange.steps)
+      const sampleGrid = (stepsX: number, stepsY: number, tolerance: number) => {
+        for (let i = 0; i <= stepsX; i++) {
+          for (let j = 0; j <= stepsY; j++) {
+            const xValue = xRange.min + (xRange.max - xRange.min) * (i / stepsX)
+            const yValue = yRange.min + (yRange.max - yRange.min) * (j / stepsY)
 
-          // Create calculation parameters with current x,y values
-          const calcParams = { ...parsedInputs }
-          calcParams[xVariable as keyof typeof calcParams] = xValue
-          calcParams[yVariable as keyof typeof calcParams] = yValue
+            // Create calculation parameters with current x,y values
+            const calcParams = { ...parsedInputs }
+            calcParams[xVariable as keyof typeof calcParams] = xValue
+            calcParams[yVariable as keyof typeof calcParams] = yValue
 
-          try {
-            const result = calculateMargins(
-              calcParams.evalPrice,
-              calcParams.purchaseToPayoutRate,
-              calcParams.avgPayout,
-              calcParams.useActivationFee,
-              calcParams.activationFee,
-              calcParams.evalPassRate,
-              calcParams.avgLiveSaved,
-              calcParams.avgLivePayout,
-              calcParams.includeLive,
-              calcParams.userFeePerAccount,
-              calcParams.dataFeePerAccount,
-              calcParams.accountFeePerAccount,
-              calcParams.staffingFeePercent,
-              calcParams.processorFeePercent,
-              calcParams.affiliateFeePercent,
-              calcParams.affiliateAppliesToActivation
-            )
+            try {
+              const result = calculateMargins(
+                calcParams.evalPrice,
+                calcParams.purchaseToPayoutRate,
+                calcParams.avgPayout,
+                calcParams.useActivationFee,
+                calcParams.activationFee,
+                calcParams.evalPassRate,
+                calcParams.avgLiveSaved,
+                calcParams.avgLivePayout,
+                calcParams.includeLive,
+                calcParams.userFeePerAccount,
+                calcParams.dataFeePerAccount,
+                calcParams.accountFeePerAccount,
+                calcParams.staffingFeePercent,
+                calcParams.processorFeePercent,
+                calcParams.affiliateFeePercent,
+                calcParams.affiliateAppliesToActivation
+              )
 
-            const margin = result.priceMargin * 100 // Convert to percentage
-            
-            // Check if this point is close to our target margin (within 2% tolerance)
-            if (Math.abs(margin - targetMargin) <= 2) {
-              points.push({ x: xValue, y: yValue })
+              const margin = result.priceMargin * 100 // Convert to percentage
+              if (Number.isFinite(margin) && Math.abs(margin - targetMargin) <= tolerance) {
+                points.push({ x: xValue, y: yValue })
+              }
+            } catch {
+              // Skip invalid calculations
+              continue
             }
-          } catch (error) {
-            // Skip invalid calculations
-            continue
           }
         }
       }
+
+      // First pass: standard tolerance and resolution
+      sampleGrid(xRange.steps, yRange.steps, 2)
+      // Fallback: increase tolerance and resolution if no points found
+      if (points.length === 0) sampleGrid(Math.max(50, xRange.steps), Math.max(50, yRange.steps), 5)
 
       if (points.length > 0) {
         datasets.push({
@@ -143,8 +149,9 @@ function ContourTab() {
           data: points,
           backgroundColor: colors[index % colors.length],
           borderColor: colors[index % colors.length],
-          pointRadius: 2,
+          pointRadius: 2.5,
           pointHoverRadius: 4,
+          borderWidth: 0,
           showLine: false
         })
       }
@@ -205,11 +212,11 @@ function ContourTab() {
       {/* Variable Selection */}
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div>
-          <label className="block text-sm font-medium mb-2">X Variable</label>
+          <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">X Variable</label>
           <select 
             value={xVariable} 
             onChange={(e) => setXVariable(e.target.value)}
-            className="w-full p-2 border rounded-md"
+            className="w-full p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
           >
             {VARIABLE_OPTIONS.map(option => (
               <option key={option.value} value={option.value}>
@@ -220,11 +227,11 @@ function ContourTab() {
         </div>
         
         <div>
-          <label className="block text-sm font-medium mb-2">Y Variable</label>
+          <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Y Variable</label>
           <select 
             value={yVariable} 
             onChange={(e) => setYVariable(e.target.value)}
-            className="w-full p-2 border rounded-md"
+            className="w-full p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
           >
             {VARIABLE_OPTIONS.map(option => (
               <option key={option.value} value={option.value}>
@@ -237,7 +244,7 @@ function ContourTab() {
 
       {/* Margin Target Selection */}
       <div className="mb-6">
-        <label className="block text-sm font-medium mb-2">Margin Targets</label>
+        <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Margin Targets</label>
         <div className="flex flex-wrap gap-2 mb-2">
           {MARGIN_TARGETS.map(target => (
             <button
@@ -260,7 +267,7 @@ function ContourTab() {
             value={customTarget}
             onChange={(e) => setCustomTarget(e.target.value)}
             placeholder="Custom target %"
-            className="p-2 border rounded-md w-32"
+            className="p-2 rounded-md w-32 bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
             min="0"
             max="100"
             step="0.1"
