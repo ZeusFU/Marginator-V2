@@ -130,16 +130,17 @@ export function SimulationDashboard() {
     )
 
     const lines: string[] = []
-    lines.push(`Price = ${safeInputs.evalPrice.toFixed(2)}`)
+    lines.push(`Price = $${safeInputs.evalPrice.toFixed(2)}`)
     lines.push(`Eval ➡ Funded = ${(safeInputs.evalPassRate).toFixed(2)}%`)
     lines.push(`Funded ➡ Payout = ${(safeInputs.simFundedRate).toFixed(2)}%`)
-    lines.push(`Avg. Payout = ${safeInputs.avgPayout.toFixed(2)}`)
-    lines.push(`Expected Margins = ${(safeMargin.priceMargin * 100).toFixed(2)}%`)
+    lines.push(`Avg. Payout = $${safeInputs.avgPayout.toFixed(2)}`)
+    lines.push('')
+    lines.push(`**Expected Margins** = ${(safeMargin.priceMargin * 100).toFixed(2)}%`)
     lines.push('')
     lines.push(`${target}% Margin Thresholds`)
-    lines.push(`Price = ${evalPriceThreshold === null ? 'N/A' : evalPriceThreshold.toFixed(2)}`)
+    lines.push(`Price = ${evalPriceThreshold === null ? 'N/A' : `$${evalPriceThreshold.toFixed(2)}`}`)
     lines.push(`Purchase to Payout = ${ptrThreshold === null ? 'N/A' : (ptrThreshold * 100).toFixed(2)}%`)
-    lines.push(`Avg. Payout = ${avgPayoutThreshold === null ? 'N/A' : avgPayoutThreshold.toFixed(2)}`)
+    lines.push(`Avg. Payout = ${avgPayoutThreshold === null ? 'N/A' : `$${avgPayoutThreshold.toFixed(2)}`}`)
     navigator.clipboard.writeText(lines.join('\n'))
   }
   
@@ -374,24 +375,26 @@ function ThresholdsPanel({ results }: { results: any }) {
         <div className="threshold-item">
           <div className="flex items-center justify-between">
             <span className="text-xs text-text_secondary block">Evaluation Price</span>
-            <button className="text-xs text-primary" onClick={() => copyThreshold('Evaluation Price', thresholds.evalPrice, false, target)}>Copy</button>
           </div>
           <span className="font-medium">{formatDisplay(thresholds.evalPrice, false)}</span>
         </div>
         <div className="threshold-item">
           <div className="flex items-center justify-between">
             <span className="text-xs text-text_secondary block">Purchase to Payout Rate</span>
-            <button className="text-xs text-primary" onClick={() => copyThreshold('Purchase to Payout Rate', thresholds.ptr, true, target)}>Copy</button>
           </div>
           <span className="font-medium">{formatDisplay(thresholds.ptr, true)}</span>
         </div>
         <div className="threshold-item">
           <div className="flex items-center justify-between">
             <span className="text-xs text-text_secondary block">Average Payout</span>
-            <button className="text-xs text-primary" onClick={() => copyThreshold('Average Payout', thresholds.avgPayout, false, target)}>Copy</button>
           </div>
           <span className="font-medium">{formatDisplay(thresholds.avgPayout, false)}</span>
         </div>
+      </div>
+      <div className="mt-3">
+        <button className="px-3 py-1.5 rounded-md border border-border text-xs" onClick={() => copyAllThresholds(thresholds, target)}>
+          Copy All Thresholds
+        </button>
       </div>
     </div>
   )
@@ -415,6 +418,15 @@ function copyThreshold(label: string, value: number | null, isRate: boolean, tar
   const v = value === null ? 'N/A' : (isRate ? `${(value * 100).toFixed(2)}%` : `${value.toFixed(2)}`)
   const text = `${target}% Margin Threshold\n${label} = ${v}`
   navigator.clipboard.writeText(text)
+}
+
+function copyAllThresholds(t: { evalPrice: number | null; ptr: number | null; avgPayout: number | null }, target: number) {
+  const lines: string[] = []
+  lines.push(`${target}% Margin Thresholds`)
+  lines.push(`Price = ${t.evalPrice === null ? 'N/A' : `$${t.evalPrice.toFixed(2)}`}`)
+  lines.push(`Purchase to Payout = ${t.ptr === null ? 'N/A' : `${(t.ptr * 100).toFixed(2)}%`}`)
+  lines.push(`Avg. Payout = ${t.avgPayout === null ? 'N/A' : `$${t.avgPayout.toFixed(2)}`}`)
+  navigator.clipboard.writeText(lines.join('\n'))
 }
 
 function computeThreshold(values: number[], margins: number[], target: number): number | null {
