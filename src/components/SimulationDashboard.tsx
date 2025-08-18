@@ -349,21 +349,30 @@ function ThresholdItem({ label, value, isRate }: { label: string; value: number 
 
 function computeThreshold(values: number[], margins: number[], target: number): number | null {
   if (!Array.isArray(values) || !Array.isArray(margins) || values.length !== margins.length || values.length === 0) return null
-  let threshold: number | null = null
-  for (let i = 0; i < values.length; i++) {
-    const m = margins[i]
-    if (m <= target) {
-      if (m === target) return values[i]
-      if (i > 0) {
-        const y1 = margins[i - 1]
-        const y2 = margins[i]
-        const x1 = values[i - 1]
-        const x2 = values[i]
-        if (y1 !== y2) threshold = x1 + (x2 - x1) * (target - y1) / (y2 - y1)
-        else threshold = x1
-      } else threshold = values[i]
-      break
-    }
+  // Prefer a segment where the curve crosses the target
+  let bestIdx: number | null = null
+  for (let i = 0; i < values.length - 1; i++) {
+    const a = margins[i] - target
+    const b = margins[i + 1] - target
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue
+    if (a === 0) return values[i]
+    if (a * b <= 0) { bestIdx = i; break }
   }
-  return threshold
+  if (bestIdx !== null) {
+    const i = bestIdx
+    const y1 = margins[i]
+    const y2 = margins[i + 1]
+    const x1 = values[i]
+    const x2 = values[i + 1]
+    if (y1 === y2) return x1
+    return x1 + (x2 - x1) * (target - y1) / (y2 - y1)
+  }
+  // Fallback: pick the x at which margin is closest to target
+  let minDiff = Infinity
+  let xAtMin = null as number | null
+  for (let i = 0; i < values.length; i++) {
+    const d = Math.abs(margins[i] - target)
+    if (d < minDiff) { minDiff = d; xAtMin = values[i] }
+  }
+  return xAtMin
 }
