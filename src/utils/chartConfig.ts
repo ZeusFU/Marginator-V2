@@ -8,7 +8,8 @@ export function createChartOptions(
   xScaleType: 'linear' | 'logarithmic',
   thresholdValue: number | null,
   xFormatter: (val: number) => string,
-  thresholdFormatter: (val: number) => string
+  thresholdFormatter: (val: number) => string,
+  targetPercent: number = 50
 ) {
   const annotations: any = {};
   
@@ -21,7 +22,7 @@ export function createChartOptions(
       borderWidth: 2,
       borderDash: [5, 5],
       label: {
-        content: `50% Margin: ${thresholdFormatter(thresholdValue)}`,
+        content: `${targetPercent}% Margin: ${thresholdFormatter(thresholdValue)}`,
         position: 'end',
         backgroundColor: 'rgba(0, 0, 0, 0.6)',
         color: '#EBF3FE',
@@ -46,13 +47,13 @@ export function createChartOptions(
   // Add horizontal 50% margin line
   annotations.line3 = {
     type: 'line',
-    yMin: 50,
-    yMax: 50,
+    yMin: targetPercent,
+    yMax: targetPercent,
     borderColor: 'rgba(255, 87, 36, 0.7)', // Orange-red color for visibility
     borderWidth: 2,
     borderDash: [5, 5],
     label: {
-      content: '50% Margin',
+      content: `${targetPercent}% Margin`,
       position: 'start',
       backgroundColor: 'rgba(0, 0, 0, 0.6)',
       color: '#FF5724',
@@ -103,9 +104,9 @@ export function createChartOptions(
     },
     scales: {
       y: {
-        // Set the y-axis min and max to focus on the range from 25% to 90%
-        min: 25,
-        max: 90,
+        // Focus around the desired target with a ±50% buffer
+        min: Math.max(0, targetPercent * 0.5),
+        max: Math.min(100, targetPercent * 1.5),
         title: {
           display: true,
           text: 'Margin (%)',

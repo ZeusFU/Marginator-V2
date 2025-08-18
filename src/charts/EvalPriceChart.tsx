@@ -3,6 +3,7 @@ import { Line } from 'react-chartjs-2';
 import { Download } from 'lucide-react';
 import { SimulationData, ThresholdResult, VisibleMarginsState } from '../utils/types';
 import { formatThresholdText, createChartOptions, formatCurrency } from '../utils/chartConfig';
+import { useSimulationContext } from '../context/SimulationContext';
 import ChartTitle from '../components/ChartTitle';
 import { Chart } from 'chart.js';
 
@@ -24,6 +25,7 @@ function EvalPriceChart({
   comparisonData = []
 }: EvalPriceChartProps) {
   const chartRef = useRef<Chart | null>(null);
+  const { chartMarginTarget } = useSimulationContext();
   
   // Generate base chart options
   const baseOptions = createChartOptions(
@@ -31,7 +33,8 @@ function EvalPriceChart({
     'linear',
     thresholds.priceThreshold,
     (val) => `$${val.toFixed(2)}`,
-    (val) => `$${val.toFixed(2)}`
+    (val) => `$${val.toFixed(2)}`,
+    chartMarginTarget
   );
   
   // Modify options to reverse the x-axis
@@ -119,7 +122,7 @@ function EvalPriceChart({
         <h4 className="text-sm font-medium mb-2 text-text_primary">Key Insights</h4>
         <div className="text-sm text-gray-400 space-y-1">
           <p>
-            Price Margin falls below 50% at: {formatThresholdText(thresholds.priceThreshold, val => `$${val.toFixed(2)}`)}
+            Price Margin falls below {chartMarginTarget}% at: {formatThresholdText(thresholds.priceThreshold, val => `$${val.toFixed(2)}`)}
           </p>
         </div>
       </div>

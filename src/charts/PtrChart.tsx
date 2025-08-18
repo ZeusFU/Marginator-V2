@@ -3,6 +3,7 @@ import { Line } from 'react-chartjs-2';
 import { Download } from 'lucide-react';
 import { SimulationData, ThresholdResult, VisibleMarginsState } from '../utils/types';
 import { formatThresholdText, createChartOptions, formatCurrency } from '../utils/chartConfig';
+import { useSimulationContext } from '../context/SimulationContext';
 import ChartTitle from '../components/ChartTitle';
 import { Chart } from 'chart.js';
 
@@ -24,6 +25,7 @@ function PtrChart({
   comparisonData = []
 }: PtrChartProps) {
   const chartRef = useRef<Chart | null>(null);
+  const { chartMarginTarget } = useSimulationContext();
   
   // Generate chart options
   const options = createChartOptions(
@@ -31,7 +33,8 @@ function PtrChart({
     'linear',
     thresholds.priceThreshold,
     (val) => `${(val * 100).toFixed(2)}%`,
-    (val) => `${(val * 100).toFixed(2)}%`
+    (val) => `${(val * 100).toFixed(2)}%`,
+    chartMarginTarget
   );
   
   // Handle download data
@@ -107,7 +110,7 @@ function PtrChart({
         <h4 className="text-sm font-medium mb-2 text-text_primary">Key Insights</h4>
         <div className="text-sm text-gray-400 space-y-1">
           <p>
-            Price Margin falls below 50% at: {formatThresholdText(thresholds.priceThreshold, val => `${(val * 100).toFixed(2)}%`)}
+            Price Margin falls below {chartMarginTarget}% at: {formatThresholdText(thresholds.priceThreshold, val => `${(val * 100).toFixed(2)}%`)}
           </p>
         </div>
       </div>
