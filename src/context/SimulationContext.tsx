@@ -926,3 +926,8 @@ export function useSimulationContext() {
   }
   return context
 } 
+
+// Alias hook export for convenience
+export function useSimulation() {
+  return useSimulationContext()
+}
