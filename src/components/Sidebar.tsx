@@ -151,7 +151,7 @@ function Sidebar({
   const isDisabled = isComparisonMode || isComparingSimulations;
 
   const containerClass = inline
-    ? 'w-full bg-surface p-4 md:p-5 rounded-lg border border-border'
+    ? 'w-full bg-card p-6 rounded-lg border border-border'
     : `fixed inset-y-0 left-0 z-40 w-72 md:w-80 lg:w-64 xl:w-72 bg-surface p-4 md:p-5 shadow-xl h-screen overflow-y-auto transition-transform duration-300 ease-in-out transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:static lg:translate-x-0 lg:h-auto lg:overflow-y-visible lg:shadow-lg`
 
   return (
@@ -166,8 +166,8 @@ function Sidebar({
         </button>
       )}
 
-      <h2 className={`text-lg md:text-xl font-semibold text-secondary mb-4 md:mb-5 flex items-center gap-2 ${inline ? '' : 'pt-6 lg:pt-0'}`}>
-        <Settings className="w-5 h-5 md:w-6 md:h-6"/> Input Parameters
+      <h2 className={`text-base md:text-lg font-semibold text-secondary mb-4 md:mb-5 flex items-center gap-2 ${inline ? '' : 'pt-6 lg:pt-0'}`}>
+        <Settings className="w-4 h-4 md:w-5 md:h-5"/> Input Parameters
       </h2>
       
       {/* Basic Parameters section - keeps dropdown functionality */}
@@ -175,7 +175,7 @@ function Sidebar({
         title="Basic Parameters" 
         tooltip="Core variables that determine the fundamental profitability of the business model"
       >
-        <div className={inline ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3' : 'space-y-3'}>
+        <div className={inline ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-3'}>
           <InputField 
             label="Evaluation Price" 
             id="evalPrice" 
@@ -254,7 +254,7 @@ function Sidebar({
         title="Company Costs" 
         tooltip="Operational costs applied per account and as a percentage of gross revenue (eval + activation). Affiliate can optionally apply to activation revenue."
       >
-        <div className={inline ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3' : 'space-y-3'}>
+        <div className={inline ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-3'}>
           <InputField 
             label="User Fee (per account)" 
             id="userFeePerAccount" 
