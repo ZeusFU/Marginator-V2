@@ -206,7 +206,7 @@ function ContourTab() {
     plugins: {
       title: {
         display: true,
-        text: `Contour Plot: ${VARIABLE_OPTIONS.find(v => v.value === xVariable)?.label} vs ${VARIABLE_OPTIONS.find(v => v.value === yVariable)?.label}`
+        text: `Contour Plot: ${variableOptions.find(v => v.value === xVariable)?.label || xVariable} vs ${variableOptions.find(v => v.value === yVariable)?.label || yVariable}`
       },
       legend: {
         position: 'top' as const
@@ -225,7 +225,7 @@ function ContourTab() {
         display: true,
         title: {
           display: true,
-          text: VARIABLE_OPTIONS.find(v => v.value === xVariable)?.label || xVariable
+          text: variableOptions.find(v => v.value === xVariable)?.label || xVariable
         },
         min: xRange.min,
         max: xRange.max
@@ -235,7 +235,7 @@ function ContourTab() {
         display: true,
         title: {
           display: true,
-          text: VARIABLE_OPTIONS.find(v => v.value === yVariable)?.label || yVariable
+          text: variableOptions.find(v => v.value === yVariable)?.label || yVariable
         },
         min: yRange.min,
         max: yRange.max
