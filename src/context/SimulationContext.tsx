@@ -167,6 +167,9 @@ interface SimulationContextType {
   togglePlanSelection: (id: string) => void
   updateComparisonPlan: (id: string, field: keyof ComparisonPlan, value: any) => void
   calculateComparisonSimulations: () => void
+  // Global margin target to bias charts
+  chartMarginTarget: number
+  setChartMarginTarget: (percent: number) => void
 }
 
 // Create the context
@@ -220,6 +223,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [comparisonSimulations, setComparisonSimulations] = useState<ComparisonPlanSimulation[]>([])
   const [isComparingSimulations, setIsComparingSimulations] = useState(false)
   const [comparisonError, setComparisonError] = useState<string | null>(null)
+  // Chart target margin (percent)
+  const [chartMarginTarget, setChartMarginTarget] = useState<number>(50)
   
   // Input update function
   const updateInput = (field: keyof SimulationInputs, value: any) => {
@@ -377,8 +382,19 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       
       // Generate data for evaluation price chart
       try {
-        // Generate evaluation price values (70% to 270% of base value)
-        const values = generateSimulationData(evalPriceNum, 1.5, SIMULATION_STEPS)
+        // Center around threshold for chart target margin
+        const center = findThresholdValue(
+          "Eval Price",
+          (value) => calculateMargins(
+            value, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
+            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
+            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
+            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+          ).priceMargin,
+          chartMarginTarget / 100,
+          evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
+        ) || evalPriceNum
+        const values = generateSimulationData(center, 1.5, SIMULATION_STEPS)
         
         for (const evalPrice of values) {
           const margins = calculateMargins(
@@ -414,7 +430,21 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       
       // Generate data for purchase to payout rate chart (0% to 100%)
       try {
-        const values = Array.from({length: SIMULATION_STEPS}, (_, i) => i / (SIMULATION_STEPS - 1))
+        // Center around target threshold for PTR
+        const ptrCenter = findThresholdValue(
+          "Purchase to Payout Rate",
+          (value) => calculateMargins(
+            evalPriceNum, value, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
+            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
+            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
+            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+          ).priceMargin,
+          chartMarginTarget / 100,
+          evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
+        )
+        const values = ptrCenter === null
+          ? Array.from({length: SIMULATION_STEPS}, (_, i) => i / (SIMULATION_STEPS - 1))
+          : generateSimulationData(ptrCenter, 1.5, SIMULATION_STEPS)
         
         for (const rate of values) {
           const margins = calculateMargins(
@@ -450,7 +480,18 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       
       // Generate data for average payout chart (0% to 300% of base value)
       try {
-        const values = generateSimulationData(avgPayoutNum, 2.5, SIMULATION_STEPS)
+        const payoutCenter = findThresholdValue(
+          "Avg Payout",
+          (value) => calculateMargins(
+            evalPriceNum, purchaseToPayoutRate, value, inputs.useActivationFee, activationFeeNum,
+            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
+            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
+            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+          ).priceMargin,
+          chartMarginTarget / 100,
+          evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
+        ) || avgPayoutNum
+        const values = generateSimulationData(payoutCenter, 2.5, SIMULATION_STEPS)
         
         for (const payout of values) {
           const margins = calculateMargins(
@@ -903,12 +944,15 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     duplicatePlan,
     togglePlanSelection,
     updateComparisonPlan,
-    calculateComparisonSimulations
+    calculateComparisonSimulations,
+    chartMarginTarget,
+    setChartMarginTarget
   }), [
     inputs, isLoading, error, results, 
     visibleMargins, 
     isComparisonMode, comparisonPlans, selectedComparisonPlans, 
-    comparisonSimulations, isComparingSimulations, comparisonError
+    comparisonSimulations, isComparingSimulations, comparisonError,
+    chartMarginTarget
   ])
   
   return (

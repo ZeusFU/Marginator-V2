@@ -281,7 +281,8 @@ export default SimulationDashboard
 
 // Dynamic thresholds panel with user-controlled margin target
 function ThresholdsPanel({ results }: { results: any }) {
-  const [targetPercent, setTargetPercent] = useState<string>('50')
+  const { chartMarginTarget, setChartMarginTarget } = useSimulationContext()
+  const [targetPercent, setTargetPercent] = useState<string>(String(chartMarginTarget))
 
   const target = useMemo(() => {
     const n = parseFloat(targetPercent)
@@ -321,7 +322,11 @@ function ThresholdsPanel({ results }: { results: any }) {
               max={100}
               step={0.1}
               value={targetPercent}
-              onChange={(e) => setTargetPercent(e.target.value)}
+              onChange={(e) => {
+                setTargetPercent(e.target.value)
+                const n = parseFloat(e.target.value)
+                if (Number.isFinite(n)) setChartMarginTarget(Math.min(100, Math.max(0.1, n)))
+              }}
               className="bg-card border border-border rounded w-28 sm:text-sm text-text_primary py-1.5 px-3"
             />
             <span className="text-xs text-text_secondary">%</span>
