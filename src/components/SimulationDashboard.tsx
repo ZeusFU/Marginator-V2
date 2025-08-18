@@ -107,6 +107,7 @@ export function SimulationDashboard() {
     avgPayout: Number(inputs?.avgPayout || 0),
     includeLive: !!inputs?.includeLive
   }
+  const purchaseToPayoutRateDec = (safeInputs.evalPassRate / 100) * (safeInputs.simFundedRate / 100)
   
   // For comparison mode
   if (isComparisonMode && comparisonSimulations.length > 0) {
@@ -234,6 +235,10 @@ export function SimulationDashboard() {
             <div>
               <span className="text-xs text-text_secondary block">Eval to Funded</span>
               <span className="font-medium">{formatPercent(safeInputs.evalPassRate / 100)}</span>
+            </div>
+            <div>
+              <span className="text-xs text-text_secondary block">Purchase to Payout</span>
+              <span className="font-medium">{formatPercent(purchaseToPayoutRateDec)}</span>
             </div>
             <div>
               <span className="text-xs text-text_secondary block">Sample Size</span>

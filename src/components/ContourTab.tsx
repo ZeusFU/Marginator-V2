@@ -66,7 +66,7 @@ function ContourTab() {
   const getVariableRange = (varName: string) => {
     switch (varName) {
       case 'evalPrice': return { min: 50, max: 500, steps: 40 }
-      case 'purchaseToPayoutRate': return { min: 0.05, max: 1.0, steps: 40 }
+      case 'purchaseToPayoutRate': return { min: 5, max: 100, steps: 40 } // percent UI
       case 'avgPayout': return { min: 1000, max: 15000, steps: 40 }
       case 'activationFee': return { min: 0, max: 500, steps: 40 }
       default: return { min: 0, max: 100, steps: 25 }
@@ -109,8 +109,10 @@ function ContourTab() {
       // Helper to evaluate margin percent given x,y
       const evalMarginPercent = (xValue: number, yValue: number) => {
         const calcParams: any = { ...parsedInputs }
-        calcParams[xVariable as keyof typeof calcParams] = xValue
-        calcParams[yVariable as keyof typeof calcParams] = yValue
+        const xInternal = xVariable === 'purchaseToPayoutRate' ? xValue / 100 : xValue
+        const yInternal = yVariable === 'purchaseToPayoutRate' ? yValue / 100 : yValue
+        calcParams[xVariable as keyof typeof calcParams] = xInternal
+        calcParams[yVariable as keyof typeof calcParams] = yInternal
         // If PTR is not on axes, derive it from evalPassRate × simFundedRate
         if (xVariable !== 'purchaseToPayoutRate' && yVariable !== 'purchaseToPayoutRate') {
           calcParams.purchaseToPayoutRate = parsedInputs.evalPassRate * parsedInputs.simFundedRate
@@ -143,7 +145,7 @@ function ContourTab() {
             const yValue = yRange.min + (yRange.max - yRange.min) * (j / stepsY)
             try {
               const margin = evalMarginPercent(xValue, yValue)
-              if (Number.isFinite(margin) && Math.abs(margin - targetMargin) <= tolerance) points.push({ x: xValue, y: yValue })
+              if (Number.isFinite(margin) && Math.abs(margin - target) <= tolerance) points.push({ x: xValue, y: yValue })
             } catch {}
           }
         }
@@ -228,7 +230,8 @@ function ContourTab() {
           text: variableOptions.find(v => v.value === xVariable)?.label || xVariable
         },
         min: xRange.min,
-        max: xRange.max
+        max: xRange.max,
+        ticks: xVariable === 'purchaseToPayoutRate' ? { callback: (v: any) => `${v}%` } : undefined
       },
       y: {
         type: 'linear' as const,
@@ -238,7 +241,8 @@ function ContourTab() {
           text: variableOptions.find(v => v.value === yVariable)?.label || yVariable
         },
         min: yRange.min,
-        max: yRange.max
+        max: yRange.max,
+        ticks: yVariable === 'purchaseToPayoutRate' ? { callback: (v: any) => `${v}%` } : undefined
       }
     }
   }
