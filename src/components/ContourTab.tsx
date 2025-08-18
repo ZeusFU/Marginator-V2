@@ -3,6 +3,7 @@ import { useSimulation } from '../context/SimulationContext'
 import { calculateMargins } from '../utils/calculations'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Scatter } from 'react-chartjs-2'
+import { exportContourAsCSV, exportContourAsJSON, ContourExportPoint } from '../utils/export'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
@@ -215,8 +216,10 @@ function ContourTab() {
       },
       tooltip: {
         callbacks: {
-          label: function(context: any) {
-            return `${context.dataset.label}: (${context.parsed.x.toFixed(2)}, ${context.parsed.y.toFixed(2)})`
+          label: (context: any) => {
+            const xLabel = xVariable === 'purchaseToPayoutRate' ? `${context.parsed.x.toFixed(2)}%` : context.parsed.x.toFixed(2)
+            const yLabel = yVariable === 'purchaseToPayoutRate' ? `${context.parsed.y.toFixed(2)}%` : context.parsed.y.toFixed(2)
+            return `${context.dataset.label}: (${xLabel}, ${yLabel})`
           }
         }
       }
@@ -245,6 +248,34 @@ function ContourTab() {
         ticks: yVariable === 'purchaseToPayoutRate' ? { callback: (v: any) => `${v}%` } : undefined
       }
     }
+  }
+
+  // Export helpers
+  function collectExportPoints(): ContourExportPoint[] {
+    const points: ContourExportPoint[] = []
+    for (const d of contourData.datasets as any[]) {
+      for (const p of d.data as Array<{x:number,y:number}>) points.push({ dataset: d.label, x: p.x, y: p.y })
+    }
+    return points
+  }
+
+  // Simple “AI” assistant: parse commands like "set x 100 400", "target 45", "ptr 0-10"
+  function handleAssistantCommand(cmd: string) {
+    const t = cmd.trim().toLowerCase()
+    if (t.startsWith('target')) { setTargetMargin(t.replace(/[^0-9.]/g, '')); return }
+    if (t.startsWith('x ')) {
+      const [a,b] = t.slice(2).split(/\s+/).map(parseFloat)
+      if (!isNaN(a)) setXMin(a)
+      if (!isNaN(b)) setXMax(b)
+      return
+    }
+    if (t.startsWith('y ')) {
+      const [a,b] = t.slice(2).split(/\s+/).map(parseFloat)
+      if (!isNaN(a)) setYMin(a)
+      if (!isNaN(b)) setYMax(b)
+      return
+    }
+    if (t.startsWith('ptr')) { setXVariable('purchaseToPayoutRate') }
   }
 
   function handleXVarChange(v: string) {
@@ -343,6 +374,29 @@ function ContourTab() {
             }
           </div>
         )}
+      </div>
+
+      {/* Export + Assistant */}
+      <div className="flex flex-col md:flex-row gap-3 items-start md:items-center mb-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => exportContourAsCSV(collectExportPoints())}
+            className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm"
+          >Export CSV</button>
+          <button
+            onClick={() => exportContourAsJSON(collectExportPoints(), { xVariable, yVariable, targetMargin: targetMarginValue })}
+            className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm"
+          >Export JSON</button>
+        </div>
+        <div className="flex-1" />
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <input
+            type="text"
+            placeholder="Assistant: e.g. 'target 45', 'x 100 400', 'ptr'"
+            className="flex-1 md:w-96 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAssistantCommand((e.target as HTMLInputElement).value) }}
+          />
+        </div>
       </div>
 
       {/* Data Summary */}
