@@ -69,7 +69,21 @@ function ContourTab() {
     return targets.length > 0 ? targets : [50]
   }, [selectedTargets, customTarget])
 
-  // Generate contour data using grid sampling
+  // Utility to get variable range for axis scaling and sampling
+  const getVariableRange = (varName: string) => {
+    switch (varName) {
+      case 'evalPrice': return { min: 50, max: 500, steps: 40 }
+      case 'purchaseToPayoutRate': return { min: 0.05, max: 1.0, steps: 40 }
+      case 'avgPayout': return { min: 1000, max: 15000, steps: 40 }
+      case 'avgLivePayout': return { min: 1000, max: 20000, steps: 40 }
+      default: return { min: 0, max: 100, steps: 25 }
+    }
+  }
+
+  const xRange = useMemo(() => getVariableRange(xVariable), [xVariable])
+  const yRange = useMemo(() => getVariableRange(yVariable), [yVariable])
+
+  // Generate contour data using iso-solver per X and grid fallback
   const contourData = useMemo(() => {
     if (!xVariable || !yVariable || xVariable === yVariable) {
       return { datasets: [] }
@@ -80,68 +94,79 @@ function ContourTab() {
 
     allTargets.forEach((targetMargin, index) => {
       const points: { x: number; y: number }[] = []
-      
-      // Define variable ranges based on the selected variables
-      const getVariableRange = (varName: string) => {
-        switch (varName) {
-          case 'evalPrice': return { min: 50, max: 500, steps: 40 }
-          case 'purchaseToPayoutRate': return { min: 0.05, max: 1.0, steps: 40 }
-          case 'avgPayout': return { min: 1000, max: 15000, steps: 40 }
-          case 'avgLivePayout': return { min: 1000, max: 20000, steps: 40 }
-          default: return { min: 0, max: 100, steps: 25 }
-        }
-      }
 
-      const xRange = getVariableRange(xVariable)
-      const yRange = getVariableRange(yVariable)
+      // Helper to evaluate margin percent given x,y
+      const evalMarginPercent = (xValue: number, yValue: number) => {
+        const calcParams: any = { ...parsedInputs }
+        calcParams[xVariable as keyof typeof calcParams] = xValue
+        calcParams[yVariable as keyof typeof calcParams] = yValue
+        const result = calculateMargins(
+          calcParams.evalPrice,
+          calcParams.purchaseToPayoutRate,
+          calcParams.avgPayout,
+          calcParams.useActivationFee,
+          calcParams.activationFee,
+          calcParams.evalPassRate,
+          calcParams.avgLiveSaved,
+          calcParams.avgLivePayout,
+          calcParams.includeLive,
+          calcParams.userFeePerAccount,
+          calcParams.dataFeePerAccount,
+          calcParams.accountFeePerAccount,
+          calcParams.staffingFeePercent,
+          calcParams.processorFeePercent,
+          calcParams.affiliateFeePercent,
+          calcParams.affiliateAppliesToActivation
+        )
+        return result.priceMargin * 100
+      }
 
       const sampleGrid = (stepsX: number, stepsY: number, tolerance: number) => {
         for (let i = 0; i <= stepsX; i++) {
           for (let j = 0; j <= stepsY; j++) {
             const xValue = xRange.min + (xRange.max - xRange.min) * (i / stepsX)
             const yValue = yRange.min + (yRange.max - yRange.min) * (j / stepsY)
-
-            // Create calculation parameters with current x,y values
-            const calcParams = { ...parsedInputs }
-            calcParams[xVariable as keyof typeof calcParams] = xValue
-            calcParams[yVariable as keyof typeof calcParams] = yValue
-
             try {
-              const result = calculateMargins(
-                calcParams.evalPrice,
-                calcParams.purchaseToPayoutRate,
-                calcParams.avgPayout,
-                calcParams.useActivationFee,
-                calcParams.activationFee,
-                calcParams.evalPassRate,
-                calcParams.avgLiveSaved,
-                calcParams.avgLivePayout,
-                calcParams.includeLive,
-                calcParams.userFeePerAccount,
-                calcParams.dataFeePerAccount,
-                calcParams.accountFeePerAccount,
-                calcParams.staffingFeePercent,
-                calcParams.processorFeePercent,
-                calcParams.affiliateFeePercent,
-                calcParams.affiliateAppliesToActivation
-              )
-
-              const margin = result.priceMargin * 100 // Convert to percentage
-              if (Number.isFinite(margin) && Math.abs(margin - targetMargin) <= tolerance) {
-                points.push({ x: xValue, y: yValue })
-              }
-            } catch {
-              // Skip invalid calculations
-              continue
-            }
+              const margin = evalMarginPercent(xValue, yValue)
+              if (Number.isFinite(margin) && Math.abs(margin - targetMargin) <= tolerance) points.push({ x: xValue, y: yValue })
+            } catch {}
           }
         }
       }
 
-      // First pass: standard tolerance and resolution
-      sampleGrid(xRange.steps, yRange.steps, 2)
-      // Fallback: increase tolerance and resolution if no points found
-      if (points.length === 0) sampleGrid(Math.max(50, xRange.steps), Math.max(50, yRange.steps), 5)
+      // Iso-contour solve: for each X, find Y that hits target using binary search if bracketed
+      for (let i = 0; i <= xRange.steps; i++) {
+        const xVal = xRange.min + (xRange.max - xRange.min) * (i / xRange.steps)
+        try {
+          const fMin = evalMarginPercent(xVal, yRange.min) - targetMargin
+          const fMax = evalMarginPercent(xVal, yRange.max) - targetMargin
+          if (Number.isFinite(fMin) && Number.isFinite(fMax) && fMin * fMax <= 0) {
+            // Bracketed - binary search
+            let lo = yRange.min, hi = yRange.max
+            for (let iter = 0; iter < 30; iter++) {
+              const mid = lo + (hi - lo) / 2
+              const fMid = evalMarginPercent(xVal, mid) - targetMargin
+              if (!Number.isFinite(fMid)) break
+              if (Math.abs(fMid) <= 0.5) { // 0.5% tolerance
+                points.push({ x: xVal, y: mid })
+                break
+              }
+              if (fMin < 0) {
+                // Function increases with decreasing y
+                if (fMid < 0) lo = mid; else hi = mid
+              } else {
+                if (fMid > 0) lo = mid; else hi = mid
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // Fallback: sample grid if iso-solve found nothing
+      if (points.length === 0) {
+        sampleGrid(xRange.steps, yRange.steps, 2)
+        if (points.length === 0) sampleGrid(Math.max(60, xRange.steps), Math.max(60, yRange.steps), 6)
+      }
 
       if (points.length > 0) {
         datasets.push({
@@ -181,18 +206,24 @@ function ContourTab() {
     },
     scales: {
       x: {
+        type: 'linear' as const,
         display: true,
         title: {
           display: true,
           text: VARIABLE_OPTIONS.find(v => v.value === xVariable)?.label || xVariable
-        }
+        },
+        min: xRange.min,
+        max: xRange.max
       },
       y: {
+        type: 'linear' as const,
         display: true,
         title: {
           display: true,
           text: VARIABLE_OPTIONS.find(v => v.value === yVariable)?.label || yVariable
-        }
+        },
+        min: yRange.min,
+        max: yRange.max
       }
     }
   }
