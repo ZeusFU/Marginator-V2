@@ -41,17 +41,7 @@ export function TabNavigation({
           <span>Charts</span>
         </button>
         
-        <button 
-          className={`category-tab flex items-center px-4 py-2 border-b-2 ${
-            activeCategory === 'comparison' 
-              ? 'border-primary text-primary font-medium' 
-              : 'border-transparent text-text_secondary hover:text-text_primary'
-          }`}
-          onClick={() => setActiveCategory('comparison')}
-        >
-          <FileText className="w-4 h-4 mr-2" />
-          <span>Comparison</span>
-        </button>
+        {/* Comparison tab removed */}
         <button 
           className={`category-tab flex items-center px-4 py-2 border-b-2 ${
             activeCategory === 'contour' 
