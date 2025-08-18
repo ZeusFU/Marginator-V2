@@ -66,7 +66,7 @@ function ContourTab() {
   const getVariableRange = (varName: string) => {
     switch (varName) {
       case 'evalPrice': return { min: 50, max: 500, steps: 40 }
-      case 'purchaseToPayoutRate': return { min: 5, max: 100, steps: 40 } // percent UI
+      case 'purchaseToPayoutRate': return { min: 0, max: 10, steps: 40 } // percent UI (0% - 10%)
       case 'avgPayout': return { min: 1000, max: 15000, steps: 40 }
       case 'activationFee': return { min: 0, max: 500, steps: 40 }
       default: return { min: 0, max: 100, steps: 25 }
