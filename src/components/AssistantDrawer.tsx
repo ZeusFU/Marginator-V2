@@ -84,11 +84,35 @@ export default function AssistantDrawer(props: AssistantDrawerProps) {
     return `Current margin ${formatPercent(res.priceMargin)} | Gross ${res.grossRevenue.toFixed(2)} | Cost ${res.cost.toFixed(2)} | Net ${res.netRevenue.toFixed(2)}`
   }
 
-  function handleCommand(raw: string) {
+  async function handleCommand(raw: string) {
     const cmd = raw.trim()
     setMessages(prev => [...prev, { role: 'user', content: raw }])
 
-    // Basic intents
+    // Try LLM first
+    try {
+      const resp = await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: cmd, context: { inputs, x: { var: props.xVariable, min: props.xMin, max: props.xMax }, y: { var: props.yVariable, min: props.yMin, max: props.yMax }, target: props.targetMargin } })
+      })
+      if (resp.ok) {
+        const json = await resp.json()
+        const actions = Array.isArray(json.actions) ? json.actions : []
+        for (const a of actions) {
+          if (a.type === 'set_input') updateInput(a.target as any, a.value)
+          if (a.type === 'set_axis' && a.target === 'x') props.setXVariable(String(a.value))
+          if (a.type === 'set_axis' && a.target === 'y') props.setYVariable(String(a.value))
+          if (a.type === 'set_range' && a.target === 'x' && Array.isArray(a.range)) { props.setXMin(Number(a.range[0])); props.setXMax(Number(a.range[1])) }
+          if (a.type === 'set_range' && a.target === 'y' && Array.isArray(a.range)) { props.setYMin(Number(a.range[0])); props.setYMax(Number(a.range[1])) }
+          if (a.type === 'set_target') props.setTargetMarginString(String(a.value))
+        }
+        setMessages(prev => [...prev, { role: 'assistant', content: json.analysis || analyze() }])
+        setText('')
+        return
+      }
+    } catch {}
+
+    // Basic intents fallback
     const lower = cmd.toLowerCase()
     let handled = false
 

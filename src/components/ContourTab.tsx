@@ -3,7 +3,7 @@ import { useSimulation } from '../context/SimulationContext'
 import { calculateMargins } from '../utils/calculations'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 import { Scatter } from 'react-chartjs-2'
-import { exportContourAsCSV, exportContourAsJSON, ContourExportPoint } from '../utils/export'
+import { ContourExportPoint } from '../utils/export'
 import AssistantDrawer from './AssistantDrawer'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
@@ -260,6 +260,30 @@ function ContourTab() {
     return points
   }
 
+  function copySummary() {
+    const fixedVars = [] as string[]
+    // Fixed = not on axes
+    const ptrDec = parsedInputs.evalPassRate * parsedInputs.simFundedRate
+    if (xVariable !== 'purchaseToPayoutRate' && yVariable !== 'purchaseToPayoutRate') fixedVars.push(`Purchase to Payout Rate: ${(ptrDec*100).toFixed(2)}%`)
+    if (xVariable !== 'evalPrice' && yVariable !== 'evalPrice') fixedVars.push(`Eval Price: ${parsedInputs.evalPrice.toFixed(2)}`)
+    if (xVariable !== 'avgPayout' && yVariable !== 'avgPayout') fixedVars.push(`Avg Payout: ${parsedInputs.avgPayout.toFixed(2)}`)
+    if (parsedInputs.useActivationFee && xVariable !== 'activationFee' && yVariable !== 'activationFee') fixedVars.push(`Activation Fee: ${parsedInputs.activationFee.toFixed(2)}`)
+
+    const rows: string[] = []
+    for (const d of contourData.datasets as any[]) {
+      rows.push(`Dataset: ${d.label}`)
+      rows.push('x\ty')
+      for (const p of d.data as Array<{x:number,y:number}>) rows.push(`${formatVal(xVariable, p.x)}\t${formatVal(yVariable, p.y)}`)
+      rows.push('')
+    }
+    const text = `In order to reach a stable ${targetMarginValue}% Margin Target the core variables must be:\n${fixedVars.map(v=>`- ${v}`).join('\n')}\n\n${rows.join('\n')}`
+    navigator.clipboard.writeText(text)
+  }
+
+  function formatVal(name: string, v: number) {
+    return name === 'purchaseToPayoutRate' ? `${v.toFixed(2)}%` : v.toFixed(2)
+  }
+
   // Simple “AI” assistant: parse commands like "set x 100 400", "target 45", "ptr 0-10"
   function handleAssistantCommand(cmd: string) {
     const t = cmd.trim().toLowerCase()
@@ -297,11 +321,11 @@ function ContourTab() {
       {/* Variable Selection */}
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div>
-          <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">X Variable</label>
+          <label className="block text-xs font-medium text-text_secondary mb-1">X Variable</label>
           <select 
             value={xVariable} 
             onChange={(e) => handleXVarChange(e.target.value)}
-            className="w-full p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
+            className="w-full bg-card border border-border rounded block w-full sm:text-sm text-text_primary py-1.5 px-3"
           >
             {variableOptions.map(option => (
               <option key={option.value} value={option.value}>
@@ -312,11 +336,11 @@ function ContourTab() {
         </div>
         
         <div>
-          <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Y Variable</label>
+          <label className="block text-xs font-medium text-text_secondary mb-1">Y Variable</label>
           <select 
             value={yVariable} 
             onChange={(e) => handleYVarChange(e.target.value)}
-            className="w-full p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
+            className="w-full bg-card border border-border rounded block w-full sm:text-sm text-text_primary py-1.5 px-3"
           >
             {variableOptions.map(option => (
               <option key={option.value} value={option.value}>
@@ -330,14 +354,14 @@ function ContourTab() {
       {/* Target Margin and Axis Ranges */}
       <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Target Margin</label>
+          <label className="block text-xs font-medium text-text_secondary mb-1">Target Margin</label>
           <div className="flex gap-2 items-center">
             <input
               type="number"
               value={targetMargin}
               onChange={(e) => setTargetMargin(e.target.value)}
               placeholder="e.g. 50"
-              className="p-2 rounded-md w-32 bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
+              className="bg-card border border-border rounded w-32 sm:text-sm text-text_primary py-1.5 px-3"
               min="1"
               max="100"
               step="0.1"
@@ -347,20 +371,20 @@ function ContourTab() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">X Range</label>
+          <label className="block text-xs font-medium text-text_secondary mb-1">X Range</label>
           <div className="flex gap-2">
-            <input type="number" className="w-24 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700" value={xMin} onChange={(e)=>setXMin(parseFloat(e.target.value))} />
+            <input type="number" className="w-24 bg-card border border-border rounded sm:text-sm text-text_primary py-1.5 px-3" value={xMin} onChange={(e)=>setXMin(parseFloat(e.target.value))} />
             <span className="self-center">to</span>
-            <input type="number" className="w-24 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700" value={xMax} onChange={(e)=>setXMax(parseFloat(e.target.value))} />
+            <input type="number" className="w-24 bg-card border border-border rounded sm:text-sm text-text_primary py-1.5 px-3" value={xMax} onChange={(e)=>setXMax(parseFloat(e.target.value))} />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Y Range</label>
+          <label className="block text-xs font-medium text-text_secondary mb-1">Y Range</label>
           <div className="flex gap-2">
-            <input type="number" className="w-24 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700" value={yMin} onChange={(e)=>setYMin(parseFloat(e.target.value))} />
+            <input type="number" className="w-24 bg-card border border-border rounded sm:text-sm text-text_primary py-1.5 px-3" value={yMin} onChange={(e)=>setYMin(parseFloat(e.target.value))} />
             <span className="self-center">to</span>
-            <input type="number" className="w-24 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700" value={yMax} onChange={(e)=>setYMax(parseFloat(e.target.value))} />
+            <input type="number" className="w-24 bg-card border border-border rounded sm:text-sm text-text_primary py-1.5 px-3" value={yMax} onChange={(e)=>setYMax(parseFloat(e.target.value))} />
           </div>
         </div>
       </div>
@@ -379,18 +403,12 @@ function ContourTab() {
         )}
       </div>
 
-      {/* Export + Assistant */}
+      {/* Copy + Assistant */}
       <div className="flex flex-col md:flex-row gap-3 items-start md:items-center mb-4">
-        <div className="flex gap-2">
-          <button
-            onClick={() => exportContourAsCSV(collectExportPoints())}
-            className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm"
-          >Export CSV</button>
-          <button
-            onClick={() => exportContourAsJSON(collectExportPoints(), { xVariable, yVariable, targetMargin: targetMarginValue })}
-            className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm"
-          >Export JSON</button>
-        </div>
+        <button
+          onClick={() => copySummary()}
+          className="px-3 py-2 rounded-md bg-primary text-white text-sm"
+        >Copy Summary</button>
         <div className="flex-1" />
         <button onClick={() => setAssistantOpen(true)} className="px-3 py-2 rounded-md bg-neutral-800 text-white text-sm border border-border">Open AI Assistant</button>
       </div>
