@@ -6,25 +6,24 @@ import { Scatter } from 'react-chartjs-2'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
-const VARIABLE_OPTIONS = [
-  { value: 'evalPrice', label: 'Eval Price' },
-  { value: 'purchaseToPayoutRate', label: 'Funded to Payout Rate' },
-  { value: 'avgPayout', label: 'Avg Payout' },
-  { value: 'avgLivePayout', label: 'Avg Live Payout' }
-]
+function getVariableOptions(useActivation: boolean) {
+  const base = [
+    { value: 'evalPrice', label: 'Eval Price' },
+    { value: 'purchaseToPayoutRate', label: 'Funded to Payout Rate' },
+    { value: 'avgPayout', label: 'Avg Payout' }
+  ]
+  if (useActivation) base.push({ value: 'activationFee', label: 'Activation Fee' } as any)
+  return base
+}
 
-const MARGIN_TARGETS = [
-  { value: 30, label: '30%' },
-  { value: 50, label: '50%' },
-  { value: 80, label: '80%' }
-]
+// Single target margin input (percent)
 
 function ContourTab() {
   const { inputs } = useSimulation()
+  const variableOptions = useMemo(() => getVariableOptions(!!inputs.useActivationFee), [inputs.useActivationFee])
   const [xVariable, setXVariable] = useState('evalPrice')
   const [yVariable, setYVariable] = useState('avgPayout')
-  const [selectedTargets, setSelectedTargets] = useState<number[]>([50])
-  const [customTarget, setCustomTarget] = useState('')
+  const [targetMargin, setTargetMargin] = useState('50')
 
   // Parse inputs with defaults
   const parsedInputs = useMemo(() => {
@@ -42,10 +41,11 @@ function ContourTab() {
       activationFee: toNum(inputs.activationFee, 200),
       // evalPassRate is entered as %, convert to decimal
       evalPassRate: toNum(inputs.evalPassRate, 10) / 100,
-      // avgLiveSaved is a percentage 0..100
-      avgLiveSaved: toNum(inputs.avgLiveSaved, 0),
-      avgLivePayout: toNum(inputs.avgLivePayout, 7500),
-      includeLive: !!inputs.includeLive,
+      simFundedRate: toNum((inputs as any).simFundedRate ?? '50', 50) / 100,
+      // For contour analysis we focus on pre-live only
+      avgLiveSaved: 0,
+      avgLivePayout: 0,
+      includeLive: false,
       userFeePerAccount: toNum(inputs.userFeePerAccount, 5.83),
       dataFeePerAccount: toNum(inputs.dataFeePerAccount, 1.467),
       accountFeePerAccount: toNum(inputs.accountFeePerAccount, 3.5),
@@ -56,18 +56,11 @@ function ContourTab() {
     }
   }, [inputs])
 
-  // Get all margin targets (predefined + custom)
-  const allTargets = useMemo(() => {
-    const targets = [...selectedTargets]
-    if (customTarget) {
-      const customValue = parseFloat(customTarget)
-      if (!isNaN(customValue) && customValue > 0 && customValue <= 100) {
-        targets.push(customValue)
-      }
-    }
-    // Ensure we always have at least one target
-    return targets.length > 0 ? targets : [50]
-  }, [selectedTargets, customTarget])
+  const targetMarginValue = useMemo(() => {
+    const v = parseFloat(targetMargin)
+    if (isNaN(v) || v <= 0) return 50
+    return Math.min(100, v)
+  }, [targetMargin])
 
   // Utility to get variable range for axis scaling and sampling
   const getVariableRange = (varName: string) => {
@@ -75,13 +68,31 @@ function ContourTab() {
       case 'evalPrice': return { min: 50, max: 500, steps: 40 }
       case 'purchaseToPayoutRate': return { min: 0.05, max: 1.0, steps: 40 }
       case 'avgPayout': return { min: 1000, max: 15000, steps: 40 }
-      case 'avgLivePayout': return { min: 1000, max: 20000, steps: 40 }
+      case 'activationFee': return { min: 0, max: 500, steps: 40 }
       default: return { min: 0, max: 100, steps: 25 }
     }
   }
 
-  const xRange = useMemo(() => getVariableRange(xVariable), [xVariable])
-  const yRange = useMemo(() => getVariableRange(yVariable), [yVariable])
+  const [xMin, setXMin] = useState(getVariableRange('evalPrice').min)
+  const [xMax, setXMax] = useState(getVariableRange('evalPrice').max)
+  const [yMin, setYMin] = useState(getVariableRange('avgPayout').min)
+  const [yMax, setYMax] = useState(getVariableRange('avgPayout').max)
+
+  const xRange = useMemo(() => {
+    const { steps } = getVariableRange(xVariable)
+    return { min: xMin, max: xMax, steps }
+  }, [xVariable, xMin, xMax])
+  const yRange = useMemo(() => {
+    const { steps } = getVariableRange(yVariable)
+    return { min: yMin, max: yMax, steps }
+  }, [yVariable, yMin, yMax])
+
+  // Reset ranges when variable changes
+  const resetAxisIfChanged = (axis: 'x' | 'y', variable: string) => {
+    const d = getVariableRange(variable)
+    if (axis === 'x') { setXMin(d.min); setXMax(d.max) }
+    else { setYMin(d.min); setYMax(d.max) }
+  }
 
   // Generate contour data using iso-solver per X and grid fallback
   const contourData = useMemo(() => {
@@ -92,7 +103,7 @@ function ContourTab() {
     const datasets: any[] = []
     const colors = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#7c3aed', '#0ea5e9', '#ef4444']
 
-    allTargets.forEach((targetMargin, index) => {
+    ;[targetMarginValue].forEach((target, index) => {
       const points: { x: number; y: number }[] = []
 
       // Helper to evaluate margin percent given x,y
@@ -100,6 +111,10 @@ function ContourTab() {
         const calcParams: any = { ...parsedInputs }
         calcParams[xVariable as keyof typeof calcParams] = xValue
         calcParams[yVariable as keyof typeof calcParams] = yValue
+        // If PTR is not on axes, derive it from evalPassRate × simFundedRate
+        if (xVariable !== 'purchaseToPayoutRate' && yVariable !== 'purchaseToPayoutRate') {
+          calcParams.purchaseToPayoutRate = parsedInputs.evalPassRate * parsedInputs.simFundedRate
+        }
         const result = calculateMargins(
           calcParams.evalPrice,
           calcParams.purchaseToPayoutRate,
@@ -107,9 +122,9 @@ function ContourTab() {
           calcParams.useActivationFee,
           calcParams.activationFee,
           calcParams.evalPassRate,
-          calcParams.avgLiveSaved,
-          calcParams.avgLivePayout,
-          calcParams.includeLive,
+          0,
+          0,
+          false,
           calcParams.userFeePerAccount,
           calcParams.dataFeePerAccount,
           calcParams.accountFeePerAccount,
@@ -138,14 +153,14 @@ function ContourTab() {
       for (let i = 0; i <= xRange.steps; i++) {
         const xVal = xRange.min + (xRange.max - xRange.min) * (i / xRange.steps)
         try {
-          const fMin = evalMarginPercent(xVal, yRange.min) - targetMargin
-          const fMax = evalMarginPercent(xVal, yRange.max) - targetMargin
+          const fMin = evalMarginPercent(xVal, yRange.min) - target
+          const fMax = evalMarginPercent(xVal, yRange.max) - target
           if (Number.isFinite(fMin) && Number.isFinite(fMax) && fMin * fMax <= 0) {
             // Bracketed - binary search
             let lo = yRange.min, hi = yRange.max
             for (let iter = 0; iter < 30; iter++) {
               const mid = lo + (hi - lo) / 2
-              const fMid = evalMarginPercent(xVal, mid) - targetMargin
+              const fMid = evalMarginPercent(xVal, mid) - target
               if (!Number.isFinite(fMid)) break
               if (Math.abs(fMid) <= 0.5) { // 0.5% tolerance
                 points.push({ x: xVal, y: mid })
@@ -170,7 +185,7 @@ function ContourTab() {
 
       if (points.length > 0) {
         datasets.push({
-          label: `${targetMargin}% Margin`,
+          label: `${target}% Margin`,
           data: points,
           backgroundColor: colors[index % colors.length],
           borderColor: colors[index % colors.length],
@@ -183,7 +198,7 @@ function ContourTab() {
     })
 
     return { datasets }
-  }, [xVariable, yVariable, allTargets, parsedInputs])
+  }, [xVariable, yVariable, targetMarginValue, parsedInputs, xMin, xMax, yMin, yMax])
 
   const chartOptions = {
     responsive: true,
@@ -228,12 +243,13 @@ function ContourTab() {
     }
   }
 
-  const handleTargetToggle = (target: number) => {
-    setSelectedTargets(prev => 
-      prev.includes(target) 
-        ? prev.filter(t => t !== target)
-        : [...prev, target]
-    )
+  function handleXVarChange(v: string) {
+    setXVariable(v)
+    resetAxisIfChanged('x', v)
+  }
+  function handleYVarChange(v: string) {
+    setYVariable(v)
+    resetAxisIfChanged('y', v)
   }
 
   return (
@@ -246,10 +262,10 @@ function ContourTab() {
           <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">X Variable</label>
           <select 
             value={xVariable} 
-            onChange={(e) => setXVariable(e.target.value)}
+            onChange={(e) => handleXVarChange(e.target.value)}
             className="w-full p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
           >
-            {VARIABLE_OPTIONS.map(option => (
+            {variableOptions.map(option => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -261,10 +277,10 @@ function ContourTab() {
           <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Y Variable</label>
           <select 
             value={yVariable} 
-            onChange={(e) => setYVariable(e.target.value)}
+            onChange={(e) => handleYVarChange(e.target.value)}
             className="w-full p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
           >
-            {VARIABLE_OPTIONS.map(option => (
+            {variableOptions.map(option => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -273,37 +289,41 @@ function ContourTab() {
         </div>
       </div>
 
-      {/* Margin Target Selection */}
-      <div className="mb-6">
-        <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Margin Targets</label>
-        <div className="flex flex-wrap gap-2 mb-2">
-          {MARGIN_TARGETS.map(target => (
-            <button
-              key={target.value}
-              onClick={() => handleTargetToggle(target.value)}
-              className={`px-3 py-1 rounded-md text-sm ${
-                selectedTargets.includes(target.value)
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {target.label}
-            </button>
-          ))}
+      {/* Target Margin and Axis Ranges */}
+      <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Target Margin</label>
+          <div className="flex gap-2 items-center">
+            <input
+              type="number"
+              value={targetMargin}
+              onChange={(e) => setTargetMargin(e.target.value)}
+              placeholder="e.g. 50"
+              className="p-2 rounded-md w-32 bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
+              min="1"
+              max="100"
+              step="0.1"
+            />
+            <span className="text-sm text-gray-500">%</span>
+          </div>
         </div>
-        
-        <div className="flex gap-2 items-center">
-          <input
-            type="number"
-            value={customTarget}
-            onChange={(e) => setCustomTarget(e.target.value)}
-            placeholder="Custom target %"
-            className="p-2 rounded-md w-32 bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
-            min="0"
-            max="100"
-            step="0.1"
-          />
-          <span className="text-sm text-gray-500">%</span>
+
+        <div>
+          <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">X Range</label>
+          <div className="flex gap-2">
+            <input type="number" className="w-24 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700" value={xMin} onChange={(e)=>setXMin(parseFloat(e.target.value))} />
+            <span className="self-center">to</span>
+            <input type="number" className="w-24 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700" value={xMax} onChange={(e)=>setXMax(parseFloat(e.target.value))} />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-gray-100">Y Range</label>
+          <div className="flex gap-2">
+            <input type="number" className="w-24 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700" value={yMin} onChange={(e)=>setYMin(parseFloat(e.target.value))} />
+            <span className="self-center">to</span>
+            <input type="number" className="w-24 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700" value={yMax} onChange={(e)=>setYMax(parseFloat(e.target.value))} />
+          </div>
         </div>
       </div>
 
@@ -323,7 +343,7 @@ function ContourTab() {
 
       {/* Data Summary */}
       <div className="text-sm text-gray-600">
-        <p>Showing contour lines for margin targets: {allTargets.map(t => `${t}%`).join(', ')}</p>
+        <p>Target margin: {targetMarginValue}%</p>
         <p>Points plotted: {contourData.datasets.reduce((sum, dataset) => sum + dataset.data.length, 0)}</p>
         {contourData.datasets.length === 0 && (
           <p className="text-yellow-600 mt-2">
