@@ -234,7 +234,7 @@ function Sidebar({
         <>
           {/* Fallback: original stacked layout when not inline */}
           <CollapsibleSection title="Basic Parameters" tooltip="Core variables that determine the fundamental profitability of the business model">
-            <div className="space-y-3">
+        <div className="space-y-3">
               {/* same inputs as above, compact omitted for brevity */}
         </div>
       </CollapsibleSection>
@@ -247,10 +247,12 @@ function Sidebar({
 // Compatibility wrapper for legacy API - this can be removed if not needed
 function SidebarWrapper({ 
   isSidebarOpen,
-  setIsSidebarOpen
+  setIsSidebarOpen,
+  inline
 }: {
   isSidebarOpen: boolean;
   setIsSidebarOpen: (open: boolean) => void;
+  inline?: boolean;
 }) {
   return (
     <>
@@ -266,6 +268,7 @@ function SidebarWrapper({
       <Sidebar 
         isSidebarOpen={isSidebarOpen} 
         setIsSidebarOpen={setIsSidebarOpen} 
+        inline={inline}
       />
     </>
   );
