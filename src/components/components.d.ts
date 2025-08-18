@@ -40,3 +40,13 @@ declare module './Modal' {
   
   export const Modal: React.FC<ModalProps>;
 } 
+
+declare module './Sidebar' {
+  export interface SidebarComponentProps {
+    isSidebarOpen: boolean
+    setIsSidebarOpen: (open: boolean) => void
+    inline?: boolean
+  }
+  const Sidebar: React.FC<SidebarComponentProps>
+  export default Sidebar
+}

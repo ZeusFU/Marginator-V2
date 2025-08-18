@@ -130,13 +130,17 @@ function ToggleableSection({
   );
 }
 
+interface SidebarComponentProps {
+  isSidebarOpen: boolean
+  setIsSidebarOpen: (open: boolean) => void
+  inline?: boolean
+}
+
 function Sidebar({ 
   isSidebarOpen, 
-  setIsSidebarOpen
-}: { 
-  isSidebarOpen: boolean, 
-  setIsSidebarOpen: (open: boolean) => void
-}) {
+  setIsSidebarOpen,
+  inline = false
+}: SidebarComponentProps) {
   const {
     inputs,
     updateInput,
@@ -146,27 +150,23 @@ function Sidebar({
   
   const isDisabled = isComparisonMode || isComparingSimulations;
 
+  const containerClass = inline
+    ? 'w-full bg-surface p-4 md:p-5 rounded-lg border border-border'
+    : `fixed inset-y-0 left-0 z-40 w-72 md:w-80 lg:w-64 xl:w-72 bg-surface p-4 md:p-5 shadow-xl h-screen overflow-y-auto transition-transform duration-300 ease-in-out transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:static lg:translate-x-0 lg:h-auto lg:overflow-y-visible lg:shadow-lg`
+
   return (
-    <aside 
-      className={`
-        fixed inset-y-0 left-0 z-40 
-        w-72 md:w-80 lg:w-64 xl:w-72 
-        bg-surface p-4 md:p-5 shadow-xl h-screen overflow-y-auto 
-        transition-transform duration-300 ease-in-out 
-        transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
-        lg:static lg:translate-x-0 lg:h-auto lg:overflow-y-visible lg:shadow-lg
-      `}
-    >
-      {/* Close button for mobile sidebar */} 
-      <button 
-        onClick={() => setIsSidebarOpen(false)} 
-        className="absolute top-2 right-2 lg:hidden p-1 text-text_secondary hover:text-text_primary"
-        aria-label="Close parameters menu"
-      >
-        <X className="w-5 h-5" />
-      </button>
-    
-      <h2 className="text-lg md:text-xl font-semibold text-secondary mb-4 md:mb-5 flex items-center gap-2 pt-6 lg:pt-0">
+    <div className={containerClass}>
+      {!inline && (
+        <button 
+          onClick={() => setIsSidebarOpen(false)} 
+          className="absolute top-2 right-2 lg:hidden p-1 text-text_secondary hover:text-text_primary"
+          aria-label="Close parameters menu"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      )}
+
+      <h2 className={`text-lg md:text-xl font-semibold text-secondary mb-4 md:mb-5 flex items-center gap-2 ${inline ? '' : 'pt-6 lg:pt-0'}`}>
         <Settings className="w-5 h-5 md:w-6 md:h-6"/> Input Parameters
       </h2>
       
@@ -378,7 +378,7 @@ function Sidebar({
           disabled={isDisabled}
         />
       </ToggleableSection>
-    </aside>
+    </div>
   );
 }
 
@@ -409,4 +409,5 @@ function SidebarWrapper({
   );
 }
 
-export default SidebarWrapper; 
+export default SidebarWrapper;
+export { Sidebar as InlineParameters };
