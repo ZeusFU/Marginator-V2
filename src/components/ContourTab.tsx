@@ -65,7 +65,6 @@ export function ContourTab() {
   }, [inputs])
 
   const datasets = useMemo(() => {
-    if (!results) return []
 
     const engine = new ContourEngine<Record<VarKey, number>>()
       .setFunction((vars) => {
@@ -104,10 +103,11 @@ export function ContourTab() {
       avgPayout: parsed.avgPayout
     }
 
-    const targetList = [
+    const targetListRaw = [
       ...targets,
       ...(customTargetPct !== '' ? [Math.max(0, Math.min(0.99, Number(customTargetPct) / 100))] : [])
     ]
+    const targetList = targetListRaw.length ? targetListRaw : [0.5]
 
     const colors = ['#3A82F7', '#FF5724', '#00C49F', '#FFBB28']
     return targetList.map((t, idx) => {
@@ -158,7 +158,7 @@ export function ContourTab() {
         fill: false
       }
     })
-  }, [results, parsed, xVar, yVar, targets, customTargetPct])
+  }, [parsed, xVar, yVar, targets, customTargetPct])
 
   const options = useMemo(() => ({
     responsive: true,
