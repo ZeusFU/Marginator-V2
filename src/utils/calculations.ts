@@ -187,12 +187,13 @@ export function adaptiveSampleRange(
   getMarginFn: (value: number) => number,
   targetMargin: number, // in 0..1
   desiredPoints = 50,
-  passes = 3
+  passes = 3,
+  bandFraction = 0.25
 ): number[] {
   if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) return []
 
   const samples = new Map<number, number>() // x -> margin
-  const band = Math.max(0.05, Math.abs(targetMargin) * 0.25)
+  const band = Math.max(0.05, Math.abs(targetMargin) * bandFraction)
 
   let windowMin = min
   let windowMax = max

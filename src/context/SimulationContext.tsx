@@ -5,7 +5,8 @@ import {
   find50PercentMarginValue, 
   findThresholdValue,
   findMarginThresholds,
-  generateSimulationData
+  generateSimulationData,
+  adaptiveSampleRange
 } from '../utils/calculations'
 import { SAMPLE_SIZE, SIMULATION_STEPS, VisibleMarginsState } from '../utils/types'
 
@@ -382,7 +383,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       
       // Generate data for evaluation price chart
       try {
-        // Center around threshold for chart target margin
+        // Center around threshold for chart target margin and adaptively sample near target
         const center = findThresholdValue(
           "Eval Price",
           (value) => calculateMargins(
@@ -394,7 +395,22 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
           chartMarginTarget / 100,
           evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
         ) || evalPriceNum
-        const values = generateSimulationData(center, 1.5, SIMULATION_STEPS)
+        const epMin = Math.max(10, center * 0.1)
+        const epMax = Math.max(center * 2, epMin + 1)
+        const values = adaptiveSampleRange(
+          epMin,
+          epMax,
+          (x) => calculateMargins(
+            x, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
+            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
+            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
+            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+          ).priceMargin,
+          chartMarginTarget / 100,
+          60,
+          3,
+          0.5 // 50% band around target
+        )
         
         for (const evalPrice of values) {
           const margins = calculateMargins(
@@ -430,7 +446,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       
       // Generate data for purchase to payout rate chart (0% to 100%)
       try {
-        // Center around target threshold for PTR
+        // Center around target threshold for PTR and adaptively sample near target
         const ptrCenter = findThresholdValue(
           "Purchase to Payout Rate",
           (value) => calculateMargins(
@@ -442,9 +458,22 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
           chartMarginTarget / 100,
           evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
         )
-        const values = ptrCenter === null
-          ? Array.from({length: SIMULATION_STEPS}, (_, i) => i / (SIMULATION_STEPS - 1))
-          : generateSimulationData(ptrCenter, 1.5, SIMULATION_STEPS)
+        const prMin = 0
+        const prMax = 1
+        const values = adaptiveSampleRange(
+          prMin,
+          prMax,
+          (v) => calculateMargins(
+            evalPriceNum, v, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
+            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
+            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
+            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+          ).priceMargin,
+          chartMarginTarget / 100,
+          60,
+          3,
+          0.5
+        )
         
         for (const rate of values) {
           const margins = calculateMargins(
@@ -491,9 +520,22 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
           chartMarginTarget / 100,
           evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
         ) || Math.max(500, avgPayoutNum)
-        // Adaptive: widen if too close to floor
-        const centerForRange = Math.max(1000, payoutCenter)
-        const values = generateSimulationData(centerForRange, 2.5, SIMULATION_STEPS)
+        const apMin = 500
+        const apMax = Math.max(5000, payoutCenter * 10)
+        const values = adaptiveSampleRange(
+          apMin,
+          apMax,
+          (p) => calculateMargins(
+            evalPriceNum, purchaseToPayoutRate, p, inputs.useActivationFee, activationFeeNum,
+            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
+            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
+            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+          ).priceMargin,
+          chartMarginTarget / 100,
+          60,
+          3,
+          0.5
+        )
         
         for (const payout of values) {
           const margins = calculateMargins(
