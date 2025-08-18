@@ -186,7 +186,7 @@ const defaultInputs: SimulationInputs = {
   userFeePerAccount: '',
   dataFeePerAccount: '',
   accountFeePerAccount: '',
-  staffingCostPerAccount: '',
+  staffingFeePercent: '',
   processorFeePercent: '',
   affiliateFeePercent: '',
   affiliateAppliesToActivation: false
@@ -394,7 +394,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             userFeePerAccount,
             dataFeePerAccount,
             accountFeePerAccount,
-            staffingCostPerAccount,
+            staffingFeePercent,
             processorFeePercent,
             affiliateFeePercent,
             affiliateAppliesToActivation
@@ -430,7 +430,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             userFeePerAccount,
             dataFeePerAccount,
             accountFeePerAccount,
-            staffingCostPerAccount,
+            staffingFeePercent,
             processorFeePercent,
             affiliateFeePercent,
             affiliateAppliesToActivation
@@ -466,7 +466,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             userFeePerAccount,
             dataFeePerAccount,
             accountFeePerAccount,
-            staffingCostPerAccount,
+            staffingFeePercent,
             processorFeePercent,
             affiliateFeePercent,
             affiliateAppliesToActivation
@@ -507,7 +507,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
                 userFeePerAccount,
                 dataFeePerAccount,
                 accountFeePerAccount,
-                staffingCostPerAccount,
+                staffingFeePercent,
                 processorFeePercent,
                 affiliateFeePercent,
                 affiliateAppliesToActivation
@@ -560,7 +560,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
                 userFeePerAccount,
                 dataFeePerAccount,
                 accountFeePerAccount,
-                staffingCostPerAccount,
+                staffingFeePercent,
                 processorFeePercent,
                 affiliateFeePercent,
                 affiliateAppliesToActivation
@@ -624,7 +624,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             userFeePerAccount,
             dataFeePerAccount,
             accountFeePerAccount,
-            staffingCostPerAccount,
+            staffingFeePercent,
             processorFeePercent,
             affiliateFeePercent,
             affiliateAppliesToActivation
@@ -666,7 +666,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             userFeePerAccount,
             dataFeePerAccount,
             accountFeePerAccount,
-            staffingCostPerAccount,
+            staffingFeePercent,
             processorFeePercent,
             affiliateFeePercent,
             affiliateAppliesToActivation
@@ -695,7 +695,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             userFeePerAccount,
             dataFeePerAccount,
             accountFeePerAccount,
-            staffingCostPerAccount,
+            staffingFeePercent,
             processorFeePercent,
             affiliateFeePercent,
             affiliateAppliesToActivation

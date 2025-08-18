@@ -14,7 +14,7 @@ export interface EngineParams {
   userFeePerAccount: number
   dataFeePerAccount: number
   accountFeePerAccount: number
-  staffingCostPerAccount: number
+  staffingFeePercent: number
   processorFeePercent: number
   affiliateFeePercent: number
   affiliateAppliesToActivation: boolean
@@ -39,7 +39,7 @@ export function buildEngine(params: EngineParams) {
         params.userFeePerAccount,
         params.dataFeePerAccount,
         params.accountFeePerAccount,
-        params.staffingCostPerAccount,
+        params.staffingFeePercent,
         params.processorFeePercent,
         params.affiliateFeePercent,
         params.affiliateAppliesToActivation

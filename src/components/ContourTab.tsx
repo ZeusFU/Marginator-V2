@@ -1,240 +1,300 @@
-import React, { useMemo, useState } from 'react'
-import { useSimulationContext } from '../context/SimulationContext'
-import { ContourEngine } from '../engines/ContourEngine'
-import { Line } from 'react-chartjs-2'
+import React, { useState, useMemo } from 'react'
+import { useSimulation } from '../context/SimulationContext'
 import { calculateMargins } from '../utils/calculations'
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
+import { Scatter } from 'react-chartjs-2'
 
-type VarKey = 'evalPrice' | 'purchaseToPayoutRate' | 'avgPayout'
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
-const VAR_LABEL: Record<VarKey, string> = {
-  evalPrice: 'Evaluation Price ($)',
-  purchaseToPayoutRate: 'Purchase to Payout Rate (%)',
-  avgPayout: 'Average Payout ($)'
-}
+const VARIABLE_OPTIONS = [
+  { value: 'evalPrice', label: 'Eval Price' },
+  { value: 'purchaseToPayoutRate', label: 'Funded to Payout Rate' },
+  { value: 'avgPayout', label: 'Avg Payout' },
+  { value: 'avgLivePayout', label: 'Avg Live Payout' }
+]
 
-export function ContourTab() {
-  const { inputs, results } = useSimulationContext()
-  const [xVar, setXVar] = useState<VarKey>('purchaseToPayoutRate')
-  const [yVar, setYVar] = useState<VarKey>('avgPayout')
-  const [targets, setTargets] = useState<number[]>([0.3, 0.5, 0.8])
-  const [customTargetPct, setCustomTargetPct] = useState<string>('')
+const MARGIN_TARGETS = [
+  { value: 30, label: '30%' },
+  { value: 50, label: '50%' },
+  { value: 80, label: '80%' }
+]
 
-  const parsed = useMemo(() => {
-    const toNum = (v: any, def: number) => {
-      if (v === '' || v === undefined || v === null) return def
-      const n = Number(v)
-      return isNaN(n) ? def : n
+function ContourTab() {
+  const { inputs } = useSimulation()
+  const [xVariable, setXVariable] = useState('evalPrice')
+  const [yVariable, setYVariable] = useState('avgPayout')
+  const [selectedTargets, setSelectedTargets] = useState<number[]>([50])
+  const [customTarget, setCustomTarget] = useState('')
+
+  // Parse inputs with defaults
+  const parsedInputs = useMemo(() => {
+    const toNum = (value: string | number, defaultVal: number) => {
+      if (typeof value === 'number') return value
+      const parsed = parseFloat(value)
+      return isNaN(parsed) ? defaultVal : parsed
     }
 
-    const evalPrice = toNum(inputs.evalPrice, 1)
-    const evalPassRate = toNum(inputs.evalPassRate, 0) / 100
-    const simFundedRate = toNum(inputs.simFundedRate, 0) / 100
-    const avgPayout = toNum(inputs.avgPayout, 1)
-    const useActivationFee = !!inputs.useActivationFee
-    const activationFee = toNum(inputs.activationFee, 0)
-    const avgLiveSaved = toNum(inputs.avgLiveSaved, 0)
-    const avgLivePayout = toNum(inputs.avgLivePayout, 0)
-    const includeLive = !!inputs.includeLive
-
-    const userFeePerAccount = inputs.userFeePerAccount === '' ? 5.83 : toNum(inputs.userFeePerAccount, 5.83)
-    const dataFeePerAccount = inputs.dataFeePerAccount === '' ? 1.467 : toNum(inputs.dataFeePerAccount, 1.467)
-    const accountFeePerAccount = inputs.accountFeePerAccount === '' ? 3.5 : toNum(inputs.accountFeePerAccount, 3.5)
-    const staffingCostPerAccount = inputs.staffingCostPerAccount === '' ? 3 : toNum(inputs.staffingCostPerAccount, 3)
-    const processorFeePercent = inputs.processorFeePercent === '' ? 5.5 : toNum(inputs.processorFeePercent, 5.5)
-    const affiliateFeePercent = inputs.affiliateFeePercent === '' ? 9.8 : toNum(inputs.affiliateFeePercent, 9.8)
-    const affiliateAppliesToActivation = !!inputs.affiliateAppliesToActivation
-
     return {
-      evalPrice,
-      evalPassRate,
-      simFundedRate,
-      avgPayout,
-      useActivationFee,
-      activationFee,
-      avgLiveSaved,
-      avgLivePayout,
-      includeLive,
-      userFeePerAccount,
-      dataFeePerAccount,
-      accountFeePerAccount,
-      staffingCostPerAccount,
-      processorFeePercent,
-      affiliateFeePercent,
-      affiliateAppliesToActivation
+      evalPrice: toNum(inputs.evalPrice, 100),
+      purchaseToPayoutRate: toNum(inputs.purchaseToPayoutRate, 0.8),
+      avgPayout: toNum(inputs.avgPayout, 5000),
+      useActivationFee: !!inputs.useActivationFee,
+      activationFee: toNum(inputs.activationFee, 200),
+      evalPassRate: toNum(inputs.evalPassRate, 0.1),
+      avgLiveSaved: toNum(inputs.avgLiveSaved, 2500),
+      avgLivePayout: toNum(inputs.avgLivePayout, 7500),
+      includeLive: !!inputs.includeLive,
+      userFeePerAccount: toNum(inputs.userFeePerAccount, 5.83),
+      dataFeePerAccount: toNum(inputs.dataFeePerAccount, 1.467),
+      accountFeePerAccount: toNum(inputs.accountFeePerAccount, 3.5),
+      staffingFeePercent: toNum(inputs.staffingFeePercent, 5),
+      processorFeePercent: toNum(inputs.processorFeePercent, 5.5),
+      affiliateFeePercent: toNum(inputs.affiliateFeePercent, 9.8),
+      affiliateAppliesToActivation: !!inputs.affiliateAppliesToActivation
     }
   }, [inputs])
 
-  const datasets = useMemo(() => {
+  // Get all margin targets (predefined + custom)
+  const allTargets = useMemo(() => {
+    const targets = [...selectedTargets]
+    if (customTarget) {
+      const customValue = parseFloat(customTarget)
+      if (!isNaN(customValue) && customValue > 0 && customValue <= 100) {
+        targets.push(customValue)
+      }
+    }
+    // Ensure we always have at least one target
+    return targets.length > 0 ? targets : [50]
+  }, [selectedTargets, customTarget])
 
-    const engine = new ContourEngine<Record<VarKey, number>>()
-      .setFunction((vars) => {
-        // Build purchaseToPayoutRate when not directly present
-        const purchaseToPayoutRate = vars.purchaseToPayoutRate
-        const margin = calculateMargins(
-          vars.evalPrice,
-          purchaseToPayoutRate,
-          vars.avgPayout,
-          parsed.useActivationFee,
-          parsed.activationFee,
-          parsed.evalPassRate,
-          parsed.avgLiveSaved,
-          parsed.avgLivePayout,
-          parsed.includeLive,
-          parsed.userFeePerAccount,
-          parsed.dataFeePerAccount,
-          parsed.accountFeePerAccount,
-          parsed.staffingCostPerAccount,
-          parsed.processorFeePercent,
-          parsed.affiliateFeePercent,
-          parsed.affiliateAppliesToActivation
-        )
-        return margin.priceMargin
-      })
-      .setPrecision(0.0005)
-      .setVariableRanges({
-        evalPrice: { min: Math.max(parsed.evalPrice * 0.1, 1), max: parsed.evalPrice * 3, steps: 50 },
-        purchaseToPayoutRate: { min: 0.001, max: 1.0, steps: 50 },
-        avgPayout: { min: Math.max(parsed.avgPayout * 0.1, 1), max: parsed.avgPayout * 3, steps: 50 }
-      })
-
-    const fixedParams: Partial<Record<VarKey, number>> = {
-      evalPrice: parsed.evalPrice,
-      purchaseToPayoutRate: parsed.evalPassRate * parsed.simFundedRate,
-      avgPayout: parsed.avgPayout
+  // Generate contour data using grid sampling
+  const contourData = useMemo(() => {
+    if (!xVariable || !yVariable || xVariable === yVariable) {
+      return { datasets: [] }
     }
 
-    const targetListRaw = [
-      ...targets,
-      ...(customTargetPct !== '' ? [Math.max(0, Math.min(0.99, Number(customTargetPct) / 100))] : [])
-    ]
-    const targetList = targetListRaw.length ? targetListRaw : [0.5]
+    const datasets: any[] = []
+    const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6']
 
-    const colors = ['#3A82F7', '#FF5724', '#00C49F', '#FFBB28']
-    return targetList.map((t, idx) => {
-      let points = engine.setContourValue(t).calculate2DContour(xVar, yVar, fixedParams)
-      // Fallback: if binary-search contour returns no points, sweep a grid and pick near-targets
-      if (!points.length) {
-        const xRange = (engine as any).variableRanges?.[xVar] || { min: fixedParams[xVar] ?? 0, max: (fixedParams[xVar] ?? 1) * 2, steps: 40 }
-        const yRange = (engine as any).variableRanges?.[yVar] || { min: fixedParams[yVar] ?? 0, max: (fixedParams[yVar] ?? 1) * 2, steps: 40 }
-        const xStep = (xRange.max - xRange.min) / (xRange.steps || 40)
-        const yStep = (yRange.max - yRange.min) / (yRange.steps || 40)
-        const near: { x: number, y: number }[] = []
-        for (let i = 0; i <= (xRange.steps || 40); i++) {
-          const xv = xRange.min + i * xStep
-          for (let j = 0; j <= (yRange.steps || 40); j++) {
-            const yv = yRange.min + j * yStep
-            const vars = { ...fixedParams, [xVar]: xv, [yVar]: yv } as Record<VarKey, number>
-            const margin = calculateMargins(
-              vars.evalPrice,
-              vars.purchaseToPayoutRate,
-              vars.avgPayout,
-              parsed.useActivationFee,
-              parsed.activationFee,
-              parsed.evalPassRate,
-              parsed.avgLiveSaved,
-              parsed.avgLivePayout,
-              parsed.includeLive,
-              parsed.userFeePerAccount,
-              parsed.dataFeePerAccount,
-              parsed.accountFeePerAccount,
-              parsed.staffingCostPerAccount,
-              parsed.processorFeePercent,
-              parsed.affiliateFeePercent,
-              parsed.affiliateAppliesToActivation
-            ).priceMargin
-            if (Math.abs(margin - t) < 0.01) near.push({ x: xv, y: yv })
+    allTargets.forEach((targetMargin, index) => {
+      const points: { x: number; y: number }[] = []
+      
+      // Define variable ranges based on the selected variables
+      const getVariableRange = (varName: string) => {
+        switch (varName) {
+          case 'evalPrice': return { min: 50, max: 500, steps: 25 }
+          case 'purchaseToPayoutRate': return { min: 0.1, max: 1.0, steps: 25 }
+          case 'avgPayout': return { min: 1000, max: 15000, steps: 25 }
+          case 'avgLivePayout': return { min: 1000, max: 20000, steps: 25 }
+          default: return { min: 0, max: 100, steps: 25 }
+        }
+      }
+
+      const xRange = getVariableRange(xVariable)
+      const yRange = getVariableRange(yVariable)
+
+      // Grid sampling to find contour points
+      for (let i = 0; i <= xRange.steps; i++) {
+        for (let j = 0; j <= yRange.steps; j++) {
+          const xValue = xRange.min + (xRange.max - xRange.min) * (i / xRange.steps)
+          const yValue = yRange.min + (yRange.max - yRange.min) * (j / yRange.steps)
+
+          // Create calculation parameters with current x,y values
+          const calcParams = { ...parsedInputs }
+          calcParams[xVariable as keyof typeof calcParams] = xValue
+          calcParams[yVariable as keyof typeof calcParams] = yValue
+
+          try {
+            const result = calculateMargins(
+              calcParams.evalPrice,
+              calcParams.purchaseToPayoutRate,
+              calcParams.avgPayout,
+              calcParams.useActivationFee,
+              calcParams.activationFee,
+              calcParams.evalPassRate,
+              calcParams.avgLiveSaved,
+              calcParams.avgLivePayout,
+              calcParams.includeLive,
+              calcParams.userFeePerAccount,
+              calcParams.dataFeePerAccount,
+              calcParams.accountFeePerAccount,
+              calcParams.staffingFeePercent,
+              calcParams.processorFeePercent,
+              calcParams.affiliateFeePercent,
+              calcParams.affiliateAppliesToActivation
+            )
+
+            const margin = result.priceMargin * 100 // Convert to percentage
+            
+            // Check if this point is close to our target margin (within 2% tolerance)
+            if (Math.abs(margin - targetMargin) <= 2) {
+              points.push({ x: xValue, y: yValue })
+            }
+          } catch (error) {
+            // Skip invalid calculations
+            continue
           }
         }
-        points = near.map(p => ({ x: p.x, y: p.y, value: t }))
       }
-      return {
-        label: `${Math.round(t * 100)}% margin`,
-        data: points.map(p => ({ x: xVar === 'purchaseToPayoutRate' ? p.x * 100 : p.x, y: yVar === 'purchaseToPayoutRate' ? p.y * 100 : p.y })),
-        borderColor: colors[idx % colors.length],
-        backgroundColor: `${colors[idx % colors.length]}33`,
-        pointRadius: 0,
-        tension: 0.1,
-        showLine: true,
-        fill: false
+
+      if (points.length > 0) {
+        datasets.push({
+          label: `${targetMargin}% Margin`,
+          data: points,
+          backgroundColor: colors[index % colors.length],
+          borderColor: colors[index % colors.length],
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          showLine: false
+        })
       }
     })
-  }, [parsed, xVar, yVar, targets, customTargetPct])
 
-  const options = useMemo(() => ({
+    return { datasets }
+  }, [xVariable, yVariable, allTargets, parsedInputs])
+
+  const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { display: true, position: 'top' as const, labels: { color: '#EBF3FE' } },
+      title: {
+        display: true,
+        text: `Contour Plot: ${VARIABLE_OPTIONS.find(v => v.value === xVariable)?.label} vs ${VARIABLE_OPTIONS.find(v => v.value === yVariable)?.label}`
+      },
+      legend: {
+        position: 'top' as const
+      },
       tooltip: {
         callbacks: {
-          label: (ctx: any) => {
-            const x = ctx.parsed.x
-            const y = ctx.parsed.y
-            const xf = xVar === 'purchaseToPayoutRate' ? `${x.toFixed(2)}%` : `$${x.toFixed(2)}`
-            const yf = yVar === 'purchaseToPayoutRate' ? `${y.toFixed(2)}%` : `$${y.toFixed(2)}`
-            return `${ctx.dataset.label}: (${xf}, ${yf})`
+          label: function(context: any) {
+            return `${context.dataset.label}: (${context.parsed.x.toFixed(2)}, ${context.parsed.y.toFixed(2)})`
           }
         }
       }
     },
     scales: {
       x: {
-        title: { display: true, text: VAR_LABEL[xVar], color: '#EBF3FE' },
-        ticks: { color: '#EBF3FE', callback: (v: any) => xVar === 'purchaseToPayoutRate' ? `${v}%` : `$${v}` }
+        display: true,
+        title: {
+          display: true,
+          text: VARIABLE_OPTIONS.find(v => v.value === xVariable)?.label || xVariable
+        }
       },
       y: {
-        title: { display: true, text: VAR_LABEL[yVar], color: '#EBF3FE' },
-        ticks: { color: '#EBF3FE', callback: (v: any) => yVar === 'purchaseToPayoutRate' ? `${v}%` : `$${v}` }
+        display: true,
+        title: {
+          display: true,
+          text: VARIABLE_OPTIONS.find(v => v.value === yVariable)?.label || yVariable
+        }
       }
     }
-  }), [xVar, yVar])
+  }
 
-  const otherOptions: VarKey[] = ['evalPrice', 'purchaseToPayoutRate', 'avgPayout']
+  const handleTargetToggle = (target: number) => {
+    setSelectedTargets(prev => 
+      prev.includes(target) 
+        ? prev.filter(t => t !== target)
+        : [...prev, target]
+    )
+  }
 
   return (
-    <div className="p-4 bg-card rounded-lg border border-border">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+    <div className="p-6">
+      <h2 className="text-2xl font-bold mb-6">Contour Analysis</h2>
+      
+      {/* Variable Selection */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
         <div>
-          <label className="block text-xs text-text_secondary mb-1">X Variable</label>
-          <select value={xVar} onChange={e => setXVar(e.target.value as VarKey)} className="w-full bg-card border border-border rounded px-2 py-1 text-sm">
-            {otherOptions.map(k => (<option key={k} value={k}>{VAR_LABEL[k]}</option>))}
+          <label className="block text-sm font-medium mb-2">X Variable</label>
+          <select 
+            value={xVariable} 
+            onChange={(e) => setXVariable(e.target.value)}
+            className="w-full p-2 border rounded-md"
+          >
+            {VARIABLE_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </div>
+        
         <div>
-          <label className="block text-xs text-text_secondary mb-1">Y Variable</label>
-          <select value={yVar} onChange={e => setYVar(e.target.value as VarKey)} className="w-full bg-card border border-border rounded px-2 py-1 text-sm">
-            {otherOptions.filter(k => k !== xVar).map(k => (<option key={k} value={k}>{VAR_LABEL[k]}</option>))}
+          <label className="block text-sm font-medium mb-2">Y Variable</label>
+          <select 
+            value={yVariable} 
+            onChange={(e) => setYVariable(e.target.value)}
+            className="w-full p-2 border rounded-md"
+          >
+            {VARIABLE_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
-        </div>
-        <div>
-          <label className="block text-xs text-text_secondary mb-1">Custom Target (%)</label>
-          <input type="number" min={0} max={99} step={0.1} value={customTargetPct} onChange={e => setCustomTargetPct(e.target.value)} className="w-full bg-card border border-border rounded px-2 py-1 text-sm" placeholder="Optional"/>
         </div>
       </div>
 
-      <div className="flex items-center gap-4 mb-4 text-sm">
-        {[30,50,80].map(p => (
-          <label key={p} className="inline-flex items-center gap-2">
-            <input type="checkbox" className="h-4 w-4" checked={targets.includes(p/100)} onChange={(e) => {
-              const val = p/100
-              setTargets(prev => e.target.checked ? [...prev, val] : prev.filter(t => t !== val))
-            }} />
-            <span>{p}%</span>
-          </label>
-        ))}
+      {/* Margin Target Selection */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium mb-2">Margin Targets</label>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {MARGIN_TARGETS.map(target => (
+            <button
+              key={target.value}
+              onClick={() => handleTargetToggle(target.value)}
+              className={`px-3 py-1 rounded-md text-sm ${
+                selectedTargets.includes(target.value)
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {target.label}
+            </button>
+          ))}
+        </div>
+        
+        <div className="flex gap-2 items-center">
+          <input
+            type="number"
+            value={customTarget}
+            onChange={(e) => setCustomTarget(e.target.value)}
+            placeholder="Custom target %"
+            className="p-2 border rounded-md w-32"
+            min="0"
+            max="100"
+            step="0.1"
+          />
+          <span className="text-sm text-gray-500">%</span>
+        </div>
       </div>
 
-      {!results ? (
-        <div className="text-sm text-text_secondary">Run a simulation first, then configure variables and margin targets to view contour lines.</div>
-      ) : (
-        <div className="h-96">
-          <Line data={{ datasets }} options={options as any} />
-        </div>
-      )}
+      {/* Chart */}
+      <div className="h-96 mb-4">
+        {xVariable && yVariable && xVariable !== yVariable ? (
+          <Scatter data={contourData} options={chartOptions} />
+        ) : (
+          <div className="flex items-center justify-center h-full text-gray-500">
+            {xVariable === yVariable 
+              ? "Please select different variables for X and Y axes"
+              : "Select X and Y variables to generate contour plot"
+            }
+          </div>
+        )}
+      </div>
+
+      {/* Data Summary */}
+      <div className="text-sm text-gray-600">
+        <p>Showing contour lines for margin targets: {allTargets.map(t => `${t}%`).join(', ')}</p>
+        <p>Points plotted: {contourData.datasets.reduce((sum, dataset) => sum + dataset.data.length, 0)}</p>
+        {contourData.datasets.length === 0 && (
+          <p className="text-yellow-600 mt-2">
+            No data points found. Try adjusting your margin targets or variable ranges.
+          </p>
+        )}
+      </div>
     </div>
   )
 }
 
 export default ContourTab
-
-
