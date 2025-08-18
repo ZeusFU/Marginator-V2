@@ -176,6 +176,69 @@ export function generateSimulationData(baseValue: number, range: number, steps: 
 }
 
 /**
+ * Adaptive sampling around a target margin level.
+ * - Pass 1: coarse scan to find region near target
+ * - Pass 2..n: refine the window around closest area
+ * Ensures at least desiredPoints located within ±25% of target (relative band) when possible.
+ */
+export function adaptiveSampleRange(
+  min: number,
+  max: number,
+  getMarginFn: (value: number) => number,
+  targetMargin: number, // in 0..1
+  desiredPoints = 50,
+  passes = 3
+): number[] {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) return []
+
+  const samples = new Map<number, number>() // x -> margin
+  const band = Math.max(0.05, Math.abs(targetMargin) * 0.25)
+
+  let windowMin = min
+  let windowMax = max
+  let steps = 21
+
+  for (let pass = 0; pass < passes; pass++) {
+    for (let i = 0; i < steps; i++) {
+      const x = windowMin + (windowMax - windowMin) * (i / (steps - 1))
+      if (!samples.has(x)) {
+        const m = getMarginFn(x)
+        if (Number.isFinite(m)) samples.set(x, m)
+      }
+    }
+    // Find closest point to target
+    let bestX = windowMin
+    let bestDiff = Infinity
+    for (const [x, m] of samples) {
+      const d = Math.abs(m - targetMargin)
+      if (d < bestDiff) { bestDiff = d; bestX = x }
+    }
+    // Set new window around bestX with shrinking factor
+    const shrink = 0.5 / (pass + 1)
+    const span = (windowMax - windowMin) * shrink
+    windowMin = Math.max(min, bestX - span / 2)
+    windowMax = Math.min(max, bestX + span / 2)
+    steps = Math.max(steps, Math.ceil(desiredPoints / (pass + 1)))
+  }
+
+  // Ensure enough points within band around target
+  let within = [...samples].filter(([_, m]) => Math.abs(m - targetMargin) <= band).map(([x]) => x)
+  if (within.length < desiredPoints) {
+    const needed = desiredPoints - within.length
+    for (let i = 0; i < needed; i++) {
+      const x = windowMin + (windowMax - windowMin) * (i / Math.max(1, needed - 1))
+      if (!samples.has(x)) {
+        const m = getMarginFn(x)
+        if (Number.isFinite(m)) samples.set(x, m)
+      }
+    }
+  }
+
+  const xs = Array.from(samples.keys()).sort((a, b) => a - b)
+  return xs
+}
+
+/**
  * Find the value for 50% Margin
  * Merged functionality from previous find50PercentMarginValue and find50PercentCombinedMarginValue
  */
@@ -240,8 +303,9 @@ export function findThresholdValue(
       max = 1.0; // 100%
       break;
     case "Avg Payout":
-      min = avgPayout * 0.1; // 10% of base
-      max = avgPayout * 10;  // 1000% of base
+      // Enforce practical floor/ceiling to avoid degenerate ranges
+      min = Math.max(500, avgPayout * 0.1);
+      max = Math.max(5000, avgPayout * 10);
       break;
     default:
       return null;

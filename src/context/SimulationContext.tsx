@@ -490,8 +490,10 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
           ).priceMargin,
           chartMarginTarget / 100,
           evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
-        ) || avgPayoutNum
-        const values = generateSimulationData(payoutCenter, 2.5, SIMULATION_STEPS)
+        ) || Math.max(500, avgPayoutNum)
+        // Adaptive: widen if too close to floor
+        const centerForRange = Math.max(1000, payoutCenter)
+        const values = generateSimulationData(centerForRange, 2.5, SIMULATION_STEPS)
         
         for (const payout of values) {
           const margins = calculateMargins(
