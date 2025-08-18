@@ -228,11 +228,11 @@ export function SimulationDashboard() {
               <span className="font-medium">{formatCurrency(safeInputs.evalPrice)}</span>
             </div>
             <div>
-              <span className="text-xs text-text_secondary block">Purchase to Payout</span>
+              <span className="text-xs text-text_secondary block">Funded to Payout</span>
               <span className="font-medium">{formatPercent(safeInputs.simFundedRate / 100)}</span>
             </div>
             <div>
-              <span className="text-xs text-text_secondary block">Passed Traders</span>
+              <span className="text-xs text-text_secondary block">Eval to Funded</span>
               <span className="font-medium">{formatPercent(safeInputs.evalPassRate / 100)}</span>
             </div>
             <div>

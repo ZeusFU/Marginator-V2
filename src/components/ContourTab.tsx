@@ -111,7 +111,42 @@ export function ContourTab() {
 
     const colors = ['#3A82F7', '#FF5724', '#00C49F', '#FFBB28']
     return targetList.map((t, idx) => {
-      const points = engine.setContourValue(t).calculate2DContour(xVar, yVar, fixedParams)
+      let points = engine.setContourValue(t).calculate2DContour(xVar, yVar, fixedParams)
+      // Fallback: if binary-search contour returns no points, sweep a grid and pick near-targets
+      if (!points.length) {
+        const xRange = (engine as any).variableRanges?.[xVar] || { min: fixedParams[xVar] ?? 0, max: (fixedParams[xVar] ?? 1) * 2, steps: 40 }
+        const yRange = (engine as any).variableRanges?.[yVar] || { min: fixedParams[yVar] ?? 0, max: (fixedParams[yVar] ?? 1) * 2, steps: 40 }
+        const xStep = (xRange.max - xRange.min) / (xRange.steps || 40)
+        const yStep = (yRange.max - yRange.min) / (yRange.steps || 40)
+        const near: { x: number, y: number }[] = []
+        for (let i = 0; i <= (xRange.steps || 40); i++) {
+          const xv = xRange.min + i * xStep
+          for (let j = 0; j <= (yRange.steps || 40); j++) {
+            const yv = yRange.min + j * yStep
+            const vars = { ...fixedParams, [xVar]: xv, [yVar]: yv } as Record<VarKey, number>
+            const margin = calculateMargins(
+              vars.evalPrice,
+              vars.purchaseToPayoutRate,
+              vars.avgPayout,
+              parsed.useActivationFee,
+              parsed.activationFee,
+              parsed.evalPassRate,
+              parsed.avgLiveSaved,
+              parsed.avgLivePayout,
+              parsed.includeLive,
+              parsed.userFeePerAccount,
+              parsed.dataFeePerAccount,
+              parsed.accountFeePerAccount,
+              parsed.staffingCostPerAccount,
+              parsed.processorFeePercent,
+              parsed.affiliateFeePercent,
+              parsed.affiliateAppliesToActivation
+            ).priceMargin
+            if (Math.abs(margin - t) < 0.01) near.push({ x: xv, y: yv })
+          }
+        }
+        points = near.map(p => ({ x: p.x, y: p.y, value: t }))
+      }
       return {
         label: `${Math.round(t * 100)}% margin`,
         data: points.map(p => ({ x: xVar === 'purchaseToPayoutRate' ? p.x * 100 : p.x, y: yVar === 'purchaseToPayoutRate' ? p.y * 100 : p.y })),
