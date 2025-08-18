@@ -175,7 +175,7 @@ function Sidebar({
         title="Basic Parameters" 
         tooltip="Core variables that determine the fundamental profitability of the business model"
       >
-        <div className="space-y-3">
+        <div className={inline ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3' : 'space-y-3'}>
           <InputField 
             label="Evaluation Price" 
             id="evalPrice" 
@@ -254,7 +254,7 @@ function Sidebar({
         title="Company Costs" 
         tooltip="Operational costs applied per account and as a percentage of gross revenue (eval + activation). Affiliate can optionally apply to activation revenue."
       >
-        <div className="space-y-3">
+        <div className={inline ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3' : 'space-y-3'}>
           <InputField 
             label="User Fee (per account)" 
             id="userFeePerAccount" 
