@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0E1117;
+  --surface: #121726;
+  --card: #1A1F2E;
+  --primary: #488BF8;
+  --secondary: #A3C1FA;
+  --text_primary: #F7FAFC;
+  --text_secondary: #A1A8B9;
+  --border: rgba(161, 168, 185, 0.1);
+}
+
+body {
+  margin: 0;
+  font-family: 'Lexend', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--background);
+  color: var(--text_primary);
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Theme colors - to be used with Tailwind */
+.bg-background { background-color: var(--background); }
+.bg-surface { background-color: var(--surface); }
+.bg-card { background-color: var(--card); }
+.text-primary { color: var(--primary); }
+.text-secondary { color: var(--secondary); }
+.text-text_primary { color: var(--text_primary); }
+.text-text_secondary { color: var(--text_secondary); }
+.bg-primary { background-color: var(--primary); }
+.bg-secondary { background-color: var(--secondary); }
+.border-primary { border-color: var(--primary); }
+.border-card { border-color: var(--card); }
+.bg-primary\/10 { background-color: rgba(72, 139, 248, 0.1); }
+.border-border { border-color: var(--border); }
+
+/* Dashboard specific styles */
+.dashboard-container {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  display: block;
+  visibility: visible;
+  opacity: 1;
+}
+
+/* Chart tooltip styles */
+.custom-tooltip {
+  @apply bg-surface text-text_primary px-2 py-1 text-xs rounded shadow-lg border border-border;
+}
+
+/* Animation for toast notifications */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, 20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to { opacity: 0; transform: translate(-50%, 20px); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-in-out forwards;
+}
+
+.animate-fadeOut {
+  animation: fadeOut 0.3s ease-in-out forwards;
+}
+
+/* Interactive hover states for charts and buttons */
+.chart-container {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.chart-container:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Improved focus styles for better interaction feedback */
+button:focus-visible, 
+input:focus-visible {
+  @apply outline-none ring-2 ring-primary ring-opacity-50;
+}
+
+/* Add transitions for smoother interactions */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Mobile swipe area for sidebar */
+.swipe-area {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 100%;
+  z-index: 20;
+}
+
+/* Enhanced scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1f2937;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Chart legend styles */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  transition: all 0.2s ease;
+}
+
+.legend-item:hover {
+  opacity: 0.8;
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 4px;
+}

@@ -1,0 +1,2168 @@
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { LineChart, Calculator, DollarSign, Percent, TrendingUp, Menu, FileText, X, Download, Settings } from 'lucide-react';
+import 'react-tabs/style/react-tabs.css';
+import { saveAs } from 'file-saver';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import annotationPlugin from 'chartjs-plugin-annotation';
+import { jsPDF } from 'jspdf';
+
+// Import components
+import Sidebar from './components/Sidebar';
+import EvalPriceChart from './charts/EvalPriceChart';
+import PtrChart from './charts/PtrChart';
+import AvgPayoutChart from './charts/AvgPayoutChart';
+import PayoutRateChart from './charts/PayoutRateChart';
+import EvalPriceRateChart from './charts/EvalPriceRateChart';
+import ThresholdsTable from './charts/ThresholdsTable';
+import { Modal } from './components/Modal';
+
+// Import utilities
+import { 
+  calculateMargins, 
+  find50PercentMarginValue, 
+  findThresholdValue,
+  findMarginThresholds
+} from './utils/calculations';
+import { 
+  createChartOptions, 
+  createDatasets, 
+  formatCurrency
+} from './utils/chartConfig';
+import { generatePDFReport } from './utils/pdfGenerator';
+import { SAMPLE_SIZE, SIMULATION_STEPS, VisibleMarginsState, SimulationData, SimulationDataPoint } from './utils/types';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  annotationPlugin
+);
+
+// Define interface for the generatePDFReport function parameters
+interface PDFReportParams {
+  baseMargins: any;
+  evalPrice: number;
+  evalPassRate: number;
+  simFundedRate: number;
+  avgPayout: number;
+  useActivationFee: boolean;
+  activationFee: number;
+  purchaseToPayoutRate: number;
+  includeLive: boolean;
+  avgLiveSaved: number;
+  avgLivePayout: number;
+  evaluationPriceData: any;
+  purchaseToPayoutRateData: any;
+  averagePayoutData: any;
+  payoutRateData: any;
+  evalPriceRateData: any;
+  evaluationPriceThresholds: any;
+  purchaseToPayoutRateThresholds: any;
+  averagePayoutThresholds: any;
+  exactThresholds: any;
+}
+
+// Add these interfaces after the PDFReportParams interface
+interface ComparisonPlan {
+  id: string;
+  name: string;
+  evalPrice: number | string;
+  evalPassRate: number | string;
+  simFundedRate: number | string;
+  avgPayout: number | string;
+  useActivationFee: boolean;
+  activationFee: number | string;
+  avgLiveSaved: number | string;
+  avgLivePayout: number | string;
+  includeLive: boolean;
+}
+
+// Fix type issues with the evalPriceRateData
+interface EvalPriceRateCombination {
+  evalPrice: number;
+  dataPoints: Array<{x: number, y: number}>;
+}
+
+// Add these interfaces after the ComparisonPlan interface
+interface ComparisonPlanSimulation {
+  id: string;
+  name: string;
+  evaluationPriceData: {
+    values: number[];
+    priceMargins: number[];
+    revenue: number[];
+    cost: number[];
+    netRevenue: number[];
+    totalRevenue: number[];
+    totalNetRevenue: number[];
+  };
+  purchaseToPayoutRateData: {
+    values: number[];
+    priceMargins: number[];
+    revenue: number[];
+    cost: number[];
+    netRevenue: number[];
+    totalRevenue: number[];
+    totalNetRevenue: number[];
+  };
+  averagePayoutData: {
+    values: number[];
+    priceMargins: number[];
+    revenue: number[];
+    cost: number[];
+    netRevenue: number[];
+    totalRevenue: number[];
+    totalNetRevenue: number[];
+  };
+  payoutRateData: {
+    combinationsPM: Array<{x: number, y: number}>;
+  };
+  evalPriceRateData: {
+    results: EvalPriceRateCombination[];
+  };
+  evaluationPriceThresholds: any;
+  purchaseToPayoutRateThresholds: any;
+  averagePayoutThresholds: any;
+  exactThresholds: any;
+  baseMargins: any;
+  purchaseToPayoutRate: number;
+}
+
+function App() {
+  // --- State Declarations ---
+  const [activeTab, setActiveTab] = useState(0);
+  const [activeCategory, setActiveCategory] = useState('variables');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
+  // --- Input States ---
+  const [evalPrice, setEvalPrice] = useState<number | string>('');
+  const [evalPassRate, setEvalPassRate] = useState<number | string>('');
+  const [simFundedRate, setSimFundedRate] = useState<number | string>('');
+  const [avgPayout, setAvgPayout] = useState<number | string>('');
+
+  // --- Activation Fee State ---
+  const [useActivationFee, setUseActivationFee] = useState(false);
+  const [activationFee, setActivationFee] = useState<number | string>('');
+
+  // --- Live Accounts State ---
+  const [avgLiveSaved, setAvgLiveSaved] = useState<number | string>('');
+  const [avgLivePayout, setAvgLivePayout] = useState<number | string>('');
+  const [includeLive, setIncludeLive] = useState(false);
+
+  // --- Chart Display State ---
+  const [visibleMargins, setVisibleMargins] = useState<VisibleMarginsState>({
+    evalPrice: { priceMargin: true },
+    ptrRate: { priceMargin: true },
+    avgPayout: { priceMargin: true },
+    payoutRate: { priceMargin: true },
+    evalPriceRate: { priceMargin: true },
+    avgLivePayout: { priceMargin: true }
+  });
+
+  // --- Comparison Mode States ---
+  const [isComparisonMode, setIsComparisonMode] = useState(false);
+  const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
+  const [comparisonPlans, setComparisonPlans] = useState<ComparisonPlan[]>([]);
+  const [selectedComparisonPlans, setSelectedComparisonPlans] = useState<string[]>([]);
+  const [comparisonSimulations, setComparisonSimulations] = useState<ComparisonPlanSimulation[]>([]);
+  const [isComparingSimulations, setIsComparingSimulations] = useState(false);
+
+  // New states for enhanced UX
+  const [showToast, setShowToast] = useState<{visible: boolean, message: string, type: 'success' | 'error'}>({
+    visible: false, 
+    message: '', 
+    type: 'success'
+  });
+
+  // Swipe gesture for sidebar on mobile
+  const startX = useRef(0);
+  const currentX = useRef(0);
+  const touchActive = useRef(false);
+
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    startX.current = e.touches[0].clientX;
+    touchActive.current = true;
+  }, []);
+
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (!touchActive.current) return;
+    currentX.current = e.touches[0].clientX;
+    
+    // Only process if touch started near the left edge
+    if (startX.current <= 30) {
+      const distance = currentX.current - startX.current;
+      if (distance > 70) { // If swiped right from edge, open sidebar
+        setIsSidebarOpen(true);
+        touchActive.current = false;
+      }
+    } else if (startX.current >= window.innerWidth - 30) {
+      const distance = startX.current - currentX.current;
+      if (distance > 70) { // If swiped left from right edge, close sidebar
+        setIsSidebarOpen(false);
+        touchActive.current = false;
+      }
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    touchActive.current = false;
+  }, []);
+
+  // Add event listeners for touch gestures
+  useEffect(() => {
+    document.addEventListener('touchstart', handleTouchStart);
+    document.addEventListener('touchmove', handleTouchMove);
+    document.addEventListener('touchend', handleTouchEnd);
+    
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
+
+  // Helper to toggle a specific margin for a specific chart
+  const toggleMargin = (chart: keyof VisibleMarginsState, margin: 'priceMargin') => {
+    setVisibleMargins(prev => ({
+      ...prev,
+      [chart]: {
+        ...prev[chart],
+        [margin]: !prev[chart][margin]
+      }
+    }));
+  };
+
+  // Helper to safely convert string or number to number
+  const toNumber = (value: string | number): number => {
+    if (typeof value === 'number') return value;
+    if (value === '') return 0;
+    return parseFloat(value) || 0;
+  };
+
+  // Recalculate purchaseToPayoutRate
+  const currentEvalPassRate = useMemo(() => toNumber(evalPassRate) / 100, [evalPassRate]);
+  const purchaseToPayoutRate = useMemo(() => currentEvalPassRate * (toNumber(simFundedRate) / 100), [currentEvalPassRate, simFundedRate]);
+
+  // Calculate base margins
+  const baseMargins = useMemo(() => {
+    try {
+      return calculateMargins(
+        toNumber(evalPrice), 
+        purchaseToPayoutRate, 
+        toNumber(avgPayout),
+        useActivationFee,
+        toNumber(activationFee),
+        currentEvalPassRate,
+        toNumber(avgLiveSaved),
+        toNumber(avgLivePayout),
+        includeLive
+      );
+    } catch (err) {
+      console.error("Error calculating base margins:", err);
+      setError("Error calculating base margins. Check input values.");
+      // Return default/zero margins
+      return { 
+        priceMargin: 0, combinedMargin: 0,
+        revenueEval: 0, cost: 0, netRevenue: 0, 
+        evalRevenueFromEvals: 0,
+        activationFeeRevenue: 0, 
+        // Live account defaults
+        liveUserCount: 0,
+        totalLiveRevenue: 0,
+        effectiveAvgPayout: 0,
+        savedAmountPerAccount: 0,
+        totalSavedAmount: 0,
+        grossCombinedRevenue: 0,
+        netCombinedRevenue: 0
+      };
+    }
+  }, [evalPrice, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive]);
+
+  // --- Simulation Ranges ---
+  const evalPriceRange = useMemo(() => {
+    const numEvalPrice = toNumber(evalPrice);
+    const minPrice = numEvalPrice * 0.1;
+    // Generate descending range from evalPrice down to minPrice
+    return Array.from({ length: SIMULATION_STEPS }, (_, i) => 
+      numEvalPrice - (numEvalPrice - minPrice) * i / (SIMULATION_STEPS - 1)
+    );
+  }, [evalPrice]);
+  
+  const ptrRange = useMemo(() => {
+    const maxPtr = Math.min(1.0, purchaseToPayoutRate * 10); // Limit max to 1.0 or 10x base
+    return Array.from({ length: SIMULATION_STEPS }, (_, i) => 0 + (maxPtr - 0) * i / (SIMULATION_STEPS - 1));
+  }, [purchaseToPayoutRate]);
+
+  const avgPayoutRange = useMemo(() => {
+    const numAvgPayout = toNumber(avgPayout);
+    return Array.from({ length: SIMULATION_STEPS }, (_, i) => 
+      (numAvgPayout * 0.1) + (numAvgPayout * (10 - 0.1)) * i / (SIMULATION_STEPS - 1)
+    );
+  }, [avgPayout]);
+
+  // --- Calculate Margins for Simulations ---
+  const { 
+    evaluationPriceData, 
+    purchaseToPayoutRateData, 
+    averagePayoutData,
+    evaluationPriceThresholds,
+    purchaseToPayoutRateThresholds,
+    averagePayoutThresholds
+  } = useMemo(() => {
+    try {
+      // Calculate margins for each simulation
+      const evalPriceSim = evalPriceRange.map(ep => calculateMargins(
+        ep, purchaseToPayoutRate, toNumber(avgPayout), useActivationFee, toNumber(activationFee), currentEvalPassRate, toNumber(avgLiveSaved), toNumber(avgLivePayout), includeLive
+      ));
+      
+      const ptrSim = ptrRange.map(ptr => calculateMargins(
+        toNumber(evalPrice), ptr, toNumber(avgPayout), useActivationFee, toNumber(activationFee), currentEvalPassRate, toNumber(avgLiveSaved), toNumber(avgLivePayout), includeLive
+      ));
+      
+      const avgPayoutSim = avgPayoutRange.map(ap => calculateMargins(
+        toNumber(evalPrice), purchaseToPayoutRate, ap, useActivationFee, toNumber(activationFee), currentEvalPassRate, toNumber(avgLiveSaved), toNumber(avgLivePayout), includeLive
+      ));
+      
+      // Extract margins
+      const evalPriceMargins = evalPriceSim.map(p => p.priceMargin);
+      const ptrPriceMargins = ptrSim.map(p => p.priceMargin);
+      const avgPayoutPriceMargins = avgPayoutSim.map(p => p.priceMargin);
+      
+      // Find thresholds
+      const evalThresholds = findMarginThresholds(evalPriceRange, evalPriceMargins);
+      const ptrThresholds = findMarginThresholds(ptrRange, ptrPriceMargins);
+      const avgPayoutThresholds = findMarginThresholds(avgPayoutRange, avgPayoutPriceMargins);
+
+      // Create datasets - update for comparison mode
+      const evalPriceDatasets = isComparingSimulations 
+        ? comparisonSimulations.map((sim, index) => {
+            // Generate colors from a palette
+            const hue = 200 + (index * 60) % 360; // Spread colors
+            const color = `hsl(${hue}, 70%, 60%)`;
+            
+            return {
+              label: sim.name,
+              data: sim.evaluationPriceData.values.map((x: number, i: number) => ({
+                x,
+                y: sim.evaluationPriceData.priceMargins[i] * 100
+              })),
+              borderColor: color,
+              backgroundColor: `hsla(${hue}, 70%, 60%, 0.2)`,
+              showLine: true,
+              tension: 0,
+              pointRadius: 0,
+              fill: 'origin',
+              hidden: false
+            };
+          })
+        : createDatasets(
+            evalPriceRange,
+            evalPriceMargins, // Use the right margins here
+            'evalPrice',
+            visibleMargins.evalPrice.priceMargin,
+            0 // tension
+          );
+
+      const ptrDatasets = isComparingSimulations
+        ? comparisonSimulations.map((sim, index) => {
+            const hue = 200 + (index * 60) % 360;
+            const color = `hsl(${hue}, 70%, 60%)`;
+            
+            return {
+              label: sim.name,
+              data: sim.purchaseToPayoutRateData.values.map((x: number, i: number) => ({
+                x,
+                y: sim.purchaseToPayoutRateData.priceMargins[i] * 100
+              })),
+              borderColor: color,
+              backgroundColor: `hsla(${hue}, 70%, 60%, 0.2)`,
+              showLine: true,
+              tension: 0.1,
+              pointRadius: 0,
+              fill: visibleMargins.ptrRate.priceMargin ? 'origin' : false,
+              hidden: !visibleMargins.ptrRate.priceMargin
+            };
+          })
+        : createDatasets(
+            ptrRange,
+            ptrPriceMargins, // Use the right margins here
+            'ptrRate',
+            visibleMargins.ptrRate.priceMargin,
+            0.1 // tension
+          );
+
+      const avgPayoutDatasets = isComparingSimulations
+        ? comparisonSimulations.map((sim, index) => {
+            const hue = 200 + (index * 60) % 360;
+            const color = `hsl(${hue}, 70%, 60%)`;
+            
+            return {
+              label: sim.name,
+              data: sim.averagePayoutData.values.map((x: number, i: number) => ({
+                x,
+                y: sim.averagePayoutData.priceMargins[i] * 100
+              })),
+              borderColor: color,
+              backgroundColor: `hsla(${hue}, 70%, 60%, 0.2)`,
+              showLine: true,
+              tension: 0.1,
+              pointRadius: 0,
+              fill: visibleMargins.avgPayout.priceMargin ? 'origin' : false,
+              hidden: !visibleMargins.avgPayout.priceMargin
+            };
+          })
+        : createDatasets(
+            avgPayoutRange,
+            avgPayoutPriceMargins, // Use the right margins here
+            'avgPayout',
+            visibleMargins.avgPayout.priceMargin,
+            0.1 // tension
+          );
+
+      // Revenue & cost series
+      const evalPriceRevenueSeries = evalPriceSim.map(p => p.revenueEval);
+      const evalPriceCostSeries = evalPriceSim.map(p => p.cost);
+
+      return {
+        evaluationPriceData: {
+          values: evalPriceRange,
+          margins: evalPriceMargins,
+          revenue: evalPriceRevenueSeries,
+          cost: evalPriceCostSeries,
+          netRevenue: evalPriceSim.map(p => p.netRevenue),
+          totalRevenue: evalPriceSim.map(p => p.grossRevenue),
+          totalNetRevenue: evalPriceSim.map(p => p.netRevenue),
+          datasets: evalPriceDatasets
+        },
+        purchaseToPayoutRateData: {
+          values: ptrRange,
+          margins: ptrPriceMargins,
+          revenue: ptrSim.map(p => p.revenueEval),
+          cost: ptrSim.map(p => p.cost),
+          netRevenue: ptrSim.map(p => p.netRevenue),
+          totalRevenue: ptrSim.map(p => p.grossRevenue),
+          totalNetRevenue: ptrSim.map(p => p.netRevenue),
+          datasets: ptrDatasets
+        },
+        averagePayoutData: {
+          values: avgPayoutRange,
+          margins: avgPayoutPriceMargins,
+          revenue: avgPayoutSim.map(p => p.revenueEval),
+          cost: avgPayoutSim.map(p => p.cost),
+          netRevenue: avgPayoutSim.map(p => p.netRevenue),
+          totalRevenue: avgPayoutSim.map(p => p.grossRevenue),
+          totalNetRevenue: avgPayoutSim.map(p => p.netRevenue),
+          datasets: avgPayoutDatasets
+        },
+        evaluationPriceThresholds: evalThresholds,
+        purchaseToPayoutRateThresholds: ptrThresholds,
+        averagePayoutThresholds: avgPayoutThresholds
+      };
+    } catch (err) {
+      console.error("Error calculating simulation data:", err);
+      // Provide more specific error message based on the error type
+      const errorMessage = err instanceof Error 
+        ? `Error calculating simulation data: ${err.message}` 
+        : "Error calculating simulation data. Check input values.";
+      setError(errorMessage);
+      // Return empty data to prevent crashes
+      const emptyData = { datasets: [] };
+      const emptyThresholds = { priceThreshold: null };
+      return { 
+        evaluationPriceData: emptyData, 
+        purchaseToPayoutRateData: emptyData, 
+        averagePayoutData: emptyData, 
+        evaluationPriceThresholds: emptyThresholds, 
+        purchaseToPayoutRateThresholds: emptyThresholds, 
+        averagePayoutThresholds: emptyThresholds 
+      };
+    }
+  }, [evalPriceRange, ptrRange, avgPayoutRange, evalPrice, purchaseToPayoutRate, avgPayout, 
+      useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive, visibleMargins, isComparingSimulations, comparisonSimulations]);
+
+  // --- Calculate Exact 50% Threshold Values ---
+  const exactThresholds = useMemo(() => {
+    const variables = ["Eval Price", "Purchase to Payout Rate", "Avg Payout"];
+    return variables.map(varName => {
+      let pmValue: number | null = null;
+      try {
+        pmValue = find50PercentMarginValue(
+          varName, 
+          toNumber(evalPrice), 
+          purchaseToPayoutRate, 
+          toNumber(avgPayout), 
+          useActivationFee, 
+          toNumber(activationFee), 
+          currentEvalPassRate, 
+          toNumber(avgLiveSaved), 
+          toNumber(avgLivePayout), 
+          includeLive
+        );
+      } catch (err) { 
+        console.error(`Error finding PM threshold for ${varName}:`, err); 
+      }
+      
+      const marginsAtPMValue = pmValue !== null ? calculateMargins(
+        varName === "Eval Price" ? pmValue : toNumber(evalPrice),
+        varName === "Purchase to Payout Rate" ? pmValue : purchaseToPayoutRate,
+        varName === "Avg Payout" ? pmValue : toNumber(avgPayout),
+        useActivationFee,
+        toNumber(activationFee),
+        currentEvalPassRate,
+        toNumber(avgLiveSaved),
+        toNumber(avgLivePayout),
+        includeLive
+      ) : null;
+
+      return {
+        name: varName,
+        pmValue: pmValue,
+        marginsAtPMValue: marginsAtPMValue
+      };
+    });
+  }, [evalPrice, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive]);
+
+  // --- Calculate Payout vs Rate combinations for 50% Margins ---
+  const payoutRateCombinations = useMemo(() => {
+    const combinationsPM = [];
+    const numSteps = 100; // Number of points to calculate for the plot
+
+    // Define a reasonable range for Purchase to Payout Rate to scan
+    const minRate = 0.001; // Start slightly above 0 to avoid division issues
+    const maxRate = Math.min(1.0, (purchaseToPayoutRate || 0.01) * 15); // Up to 15x base or 100%
+
+    const getPMMarginForPayout = (rate: number) => (payout: number) => 
+        calculateMargins(toNumber(evalPrice), rate, payout, useActivationFee, toNumber(activationFee), currentEvalPassRate, toNumber(avgLiveSaved), toNumber(avgLivePayout), includeLive).priceMargin;
+
+    for (let i = 0; i < numSteps; i++) {
+      const currentRate = minRate + (maxRate - minRate) * i / (numSteps - 1);
+      
+      let payoutFor50PM: number | null = null;
+
+      try {
+        payoutFor50PM = findThresholdValue(
+            "Avg Payout", 
+            getPMMarginForPayout(currentRate), 
+            0.5, 
+            toNumber(evalPrice), 
+            currentRate, // Pass the currentRate being iterated
+            toNumber(avgPayout), // Base avgPayout is used for initial range in findThresholdValue
+            useActivationFee,
+            toNumber(activationFee),
+            currentEvalPassRate
+        );
+      } catch (err) { 
+        console.error(`Error finding PM payout for rate ${currentRate}:`, err); 
+      }
+
+      if (payoutFor50PM !== null) {
+        combinationsPM.push({ x: currentRate, y: payoutFor50PM });
+      }
+    }
+    
+    return { combinationsPM };
+  }, [evalPrice, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive]);
+
+  // --- Calculate Eval Price vs Rate combinations for 50% Margins ---
+  const evalPriceRateCombinations = useMemo(() => {
+    const results: Array<{evalPrice: number, dataPoints: Array<{x: number, y: number}>}> = [];
+    const numRates = 100; // Steps for rates
+    const numEvalPrices = 5; // Number of different eval prices to simulate
+    
+    // Define ranges
+    const minRate = 0.001;
+    const maxRate = Math.min(1.0, (purchaseToPayoutRate || 0.01) * 15);
+    
+    // Generate eval price steps from 50% of current eval price to 150%
+    const numEvalPrice = toNumber(evalPrice);
+    const evalPriceSteps = Array.from({ length: numEvalPrices }, (_, i) => 
+      numEvalPrice * (0.5 + i * 0.25)); // From 50% to 150% of current eval price
+    
+    // For each eval price, calculate a curve
+    evalPriceSteps.forEach(currentEvalPrice => {
+      const dataPoints = [];
+      
+      const getPMMarginForPayout = (rate: number) => (payout: number) => 
+        calculateMargins(currentEvalPrice, rate, payout, 
+                      useActivationFee, toNumber(activationFee), 
+                      currentEvalPassRate, toNumber(avgLiveSaved), toNumber(avgLivePayout), includeLive).priceMargin;
+      
+      // For each rate, find the payout that gives exactly 50% margin at this eval price
+      for (let i = 0; i < numRates; i++) {
+        const currentRate = minRate + (maxRate - minRate) * i / (numRates - 1);
+        
+        try {
+          const payoutFor50PM = findThresholdValue(
+            "Avg Payout", 
+            getPMMarginForPayout(currentRate), 
+            0.5, 
+            currentEvalPrice, // Use the current eval price in the loop
+            currentRate,
+            toNumber(avgPayout),
+            useActivationFee,
+            toNumber(activationFee),
+            currentEvalPassRate
+          );
+          
+          if (payoutFor50PM !== null) {
+            dataPoints.push({ x: currentRate, y: payoutFor50PM });
+          }
+        } catch (err) { 
+          console.error(`Error finding payout for rate ${currentRate} at eval price ${currentEvalPrice}:`, err); 
+        }
+      }
+      
+      // Add this curve to the results
+      results.push({
+        evalPrice: currentEvalPrice,
+        dataPoints: dataPoints
+      });
+    });
+    
+    return results;
+  }, [evalPrice, avgPayout, purchaseToPayoutRate, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive]);
+
+  // --- Chart Data for Eval Price vs Rate --- 
+  const evalPriceRateChartData = useMemo(() => ({
+    datasets: isComparingSimulations
+      ? comparisonSimulations.flatMap((sim, index) => {
+          return sim.evalPriceRateData.results.map((combination: EvalPriceRateCombination, i: number) => {
+            // Generate colors from a palette - different hue for each plan
+            const hue = 200 + (index * 60) % 360;
+            // Different brightness for different eval prices within the same plan
+            const brightness = 40 + (i * 10);
+            const color = `hsl(${hue}, 70%, ${brightness}%)`;
+            
+            return {
+              label: `${sim.name}: $${combination.evalPrice.toFixed(0)}`,
+              data: combination.dataPoints,
+              borderColor: color,
+              backgroundColor: `hsla(${hue}, 70%, ${brightness}%, 0.2)`,
+              showLine: true,
+              tension: 0.1,
+              pointRadius: 0,
+              fill: false,
+              borderWidth: 2,
+              order: 1
+            };
+          }).concat(index === 0 ? [{
+            label: `${sim.name} Current`,
+            data: [{
+              x: sim.purchaseToPayoutRate,
+              y: toNumber(comparisonPlans.find(p => p.id === sim.id)?.avgPayout || 0)
+            }],
+            borderColor: '#FF6384',
+            backgroundColor: '#FF6384',
+            pointRadius: 6,
+            showLine: false,
+            tension: 0, // Add missing properties
+            fill: false,
+            borderWidth: 2,
+            order: 0
+          }] : []);
+        })
+      : [
+          // Create a dataset for each eval price curve with different colors
+          ...evalPriceRateCombinations.map((combination, index) => {
+            // Generate colors from a palette
+            const hue = 200 + (index * 30) % 360; // Spread colors
+            const color = `hsl(${hue}, 70%, 60%)`;
+            
+            return {
+              label: `Eval Price: $${combination.evalPrice.toFixed(0)}`,
+              data: combination.dataPoints,
+              borderColor: color,
+              backgroundColor: `hsla(${hue}, 70%, 60%, 0.2)`,
+              showLine: true,
+              tension: 0.1,
+              pointRadius: 0,
+              fill: false,
+              borderWidth: 2,
+              order: 1
+            };
+          }),
+          // Add current position marker
+          {
+            label: 'Current Settings',
+            data: [{
+              x: purchaseToPayoutRate,
+              y: toNumber(avgPayout)
+            }],
+            borderColor: '#FF6384',
+            backgroundColor: '#FF6384',
+            pointRadius: 6,
+            showLine: false,
+            tension: 0, // Add missing properties
+            fill: false,
+            borderWidth: 2,
+            order: 0
+          }
+        ]
+  }), [evalPriceRateCombinations, purchaseToPayoutRate, avgPayout, isComparingSimulations, comparisonSimulations, comparisonPlans]);
+
+  // Chart options for Eval Price vs Rate - ensure no negative values
+  const evalPriceRateChartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { 
+        position: 'top' as const,
+        labels: { color: '#EBF3FE' }
+      },
+      tooltip: {
+        enabled: true,
+        mode: 'index' as const,
+        intersect: false,
+        callbacks: {
+          title: (tooltipItems: Array<{parsed: {x: number, y: number}}>) => `Rate: ${(tooltipItems[0].parsed.x * 100).toFixed(2)}%`,
+          label: (tooltipItem: {parsed: {x: number, y: number}, dataset: {label: string}}) => {
+            if (tooltipItem.dataset.label.includes('Current')) {
+              return `Current: ${(tooltipItem.parsed.x * 100).toFixed(2)}% rate, $${tooltipItem.parsed.y.toFixed(2)} payout`;
+            }
+            return `${tooltipItem.dataset.label}: $${tooltipItem.parsed.y.toFixed(2)} Avg Payout`;
+          }
+        }
+      },
+      annotation: {
+        annotations: {
+          line1: {
+            type: 'line',
+            yMin: 0,
+            yMax: 0,
+            borderColor: 'rgba(255, 255, 255, 0.2)',
+            borderWidth: 1,
+            borderDash: [6, 6]
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        type: 'linear' as const,
+        title: { display: true, text: 'Purchase to Payout Rate', color: '#EBF3FE' },
+        ticks: { color: '#EBF3FE', callback: (val: number | string) => `${(Number(val) * 100).toFixed(1)}%` },
+        grid: { color: 'rgba(255, 255, 255, 0.1)' },
+        min: 0
+      },
+      y: {
+        type: 'linear' as const,
+        title: { display: true, text: 'Average Payout ($)', color: '#EBF3FE' },
+        ticks: { color: '#EBF3FE', callback: (val: number | string) => `$${Number(val).toFixed(0)}` },
+        grid: { color: 'rgba(255, 255, 255, 0.1)' },
+        min: 0
+      }
+    }
+  }), []);
+
+  // --- Chart Data and Options for Payout vs Rate Combinations ---
+  const payoutRateChartData = useMemo(() => ({
+    datasets: isComparingSimulations
+      ? [
+          ...comparisonSimulations.map((sim, index) => {
+            const hue = 200 + (index * 60) % 360;
+            const color = `hsl(${hue}, 70%, 60%)`;
+            
+            return {
+              label: sim.name,
+              data: sim.payoutRateData.combinationsPM,
+              borderColor: color,
+              backgroundColor: `hsla(${hue}, 70%, 60%, 0.2)`,
+              showLine: true,
+              tension: 0.1,
+              pointRadius: 0,
+              fill: 'end',
+              order: 2
+            };
+          }),
+          {
+            label: 'Current Inputs',
+            data: comparisonSimulations.length > 0 ? [] : [{ x: purchaseToPayoutRate, y: avgPayout }],
+            borderColor: '#FF6384',
+            backgroundColor: '#FF6384',
+            pointRadius: 6,
+            pointHoverRadius: 8 as number, // Fix type issue
+            showLine: false,
+            order: 0
+          }
+        ]
+      : [
+          {
+            label: '50% Price Margin Combinations',
+            data: payoutRateCombinations.combinationsPM,
+            borderColor: '#3A82F7', // Changed from gold to blue
+            backgroundColor: 'rgba(58, 130, 247, 0.3)', // Changed to blue with transparency
+            showLine: true,
+            tension: 0.1,
+            pointRadius: 0,
+            fill: 'end',
+            order: 2
+          },
+          {
+            label: 'Current Inputs',
+            data: [{ x: purchaseToPayoutRate, y: avgPayout }],
+            borderColor: '#FF6384',
+            backgroundColor: '#FF6384',
+            pointRadius: 6,
+            pointHoverRadius: 8 as number, // Fix type issue
+            showLine: false,
+            order: 0
+          }
+        ]
+  }), [payoutRateCombinations, purchaseToPayoutRate, avgPayout, isComparingSimulations, comparisonSimulations]);
+
+  // Chart options for Payout vs Rate - ensure no negative values
+  const payoutRateChartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { 
+        position: 'top' as const, 
+        labels: { color: '#EBF3FE' },
+        onClick: () => {}
+      },
+      tooltip: {
+        enabled: true, 
+        mode: 'index' as const, 
+        intersect: false,
+        callbacks: {
+          title: (tooltipItems: Array<{parsed: {x: number, y: number}}>) => `Rate: ${(tooltipItems[0].parsed.x * 100).toFixed(2)}%`,
+          label: (tooltipItem: {parsed: {x: number, y: number}, dataset: {label: string}}) => 
+             `${tooltipItem.dataset.label}: $${tooltipItem.parsed.y.toFixed(2)} Avg Payout`
+        }
+      },
+      annotation: {
+        annotations: {
+          line1: {
+            type: 'line',
+            yMin: 0,
+            yMax: 0,
+            borderColor: 'rgba(255, 255, 255, 0.2)',
+            borderWidth: 1,
+            borderDash: [6, 6]
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        type: 'linear' as const,
+        title: { display: true, text: 'Purchase to Payout Rate', color: '#EBF3FE' },
+        ticks: { 
+          color: '#EBF3FE', 
+          callback: (value: number | string) => `${(Number(value) * 100).toFixed(1)}%` 
+        },
+        grid: { color: 'rgba(255, 255, 255, 0.1)' },
+        min: 0
+      },
+      y: {
+        type: 'linear' as const,
+        title: { display: true, text: 'Average Payout ($)', color: '#EBF3FE' },
+        ticks: { 
+          color: '#EBF3FE', 
+          callback: (value: number | string) => `$${Number(value).toFixed(0)}` 
+        },
+        grid: { color: 'rgba(255, 255, 255, 0.1)' },
+        min: 0
+      }
+    }
+  }), []);
+
+  // Generate chart options for each chart
+  const evalPriceOptions = useMemo(() => {
+    const options = createChartOptions(
+      'Eval Price ($)',
+      'linear',
+      evaluationPriceThresholds.priceThreshold,
+      val => `$${val.toFixed(2)}`,
+      val => `$${val.toFixed(2)}`
+    );
+    
+    // Apply reverse specifically for this linear scale
+    if (options.scales?.x && options.scales.x.type === 'linear') {
+      // Use correct type casting
+      (options.scales.x as unknown as { reverse: boolean }).reverse = true;
+    }
+    
+    return options;
+  }, [evaluationPriceThresholds]);
+
+  const ptrOptions = useMemo(() => {
+    return createChartOptions(
+      'Purchase to Payout Rate (%)',
+      'linear',
+      purchaseToPayoutRateThresholds.priceThreshold,
+      val => `${(val * 100).toFixed(2)}%`,
+      val => `${(val * 100).toFixed(2)}%`
+    );
+  }, [purchaseToPayoutRateThresholds]);
+
+  const avgPayoutOptions = useMemo(() => {
+    return createChartOptions(
+      'Average Payout ($)',
+      'linear',
+      averagePayoutThresholds.priceThreshold,
+      val => `$${val.toFixed(2)}`,
+      val => `$${val.toFixed(2)}`
+    );
+  }, [averagePayoutThresholds]);
+
+  // Download functions
+  const downloadSimulationData = (
+    chartData: { 
+      datasets: Array<{ 
+        label: string; 
+        data: Array<{ x: number; y: number }>; 
+        hidden?: boolean;
+        borderColor?: string;
+        backgroundColor?: string;
+        showLine?: boolean;
+        tension?: number;
+        pointRadius?: number;
+        fill?: string | boolean;
+        order?: number;
+      }> 
+    }, 
+    xAxisTitle: string, 
+    filename: string, 
+    valueFormatter: (val: number) => string
+  ) => {
+    if (!chartData.datasets || chartData.datasets.length === 0) {
+      displayToast("No data to download", "error");
+      return;
+    }
+    
+    // Find the visible dataset
+    const visibleDataset = chartData.datasets.find(ds => !ds.hidden) || chartData.datasets[0];
+    
+    // Use the label of the visible dataset
+    const headers = [xAxisTitle, visibleDataset.label];
+    
+    // Map data from the visible dataset
+    const rows = visibleDataset.data.map(point => {
+      if (typeof point.y === 'string') {
+        // Handle string y values by converting to number if possible
+        return [valueFormatter(point.x), point.y];
+      }
+      return [valueFormatter(point.x), (point.y).toFixed(2) + '%'];
+    });
+    
+    // Create CSV content
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+    
+    // Download as a CSV file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    saveAs(blob, filename);
+  };
+
+  // Function to display toast notifications
+  const displayToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setShowToast({ visible: true, message, type });
+    setTimeout(() => setShowToast(prev => ({ ...prev, visible: false })), 3000);
+  };
+
+  // Enhanced PDF report generation with feedback
+  const handleGeneratePDFReport = () => {
+    setIsLoading(true);
+    displayToast('Generating PDF report...');
+    
+    try {
+      generatePDFReport(
+        baseMargins,
+        toNumber(evalPrice),
+        toNumber(avgPayout),
+        0, // discountPct is not used in current version
+        currentEvalPassRate,
+        toNumber(simFundedRate),
+        purchaseToPayoutRate,
+        useActivationFee,
+        toNumber(activationFee),
+        0, // activationFeeDiscountPct is not used in current version
+        toNumber(avgLiveSaved),
+        toNumber(avgLivePayout),
+        includeLive,
+        evaluationPriceData,
+        purchaseToPayoutRateData,
+        averagePayoutData,
+        evaluationPriceThresholds,
+        purchaseToPayoutRateThresholds,
+        averagePayoutThresholds,
+        exactThresholds || []
+      );
+      
+      setIsLoading(false);
+      displayToast('PDF report generated successfully!');
+    } catch (error: any) {
+      setIsLoading(false);
+      setError(error.message);
+      displayToast(`Error generating PDF: ${error.message}`, 'error');
+    }
+  };
+
+  // Function to generate a unique ID
+  const generateId = () => `plan_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+  // Calculate all comparison plan simulations
+  const calculateComparisonSimulations = () => {
+    if (comparisonPlans.length === 0) {
+      displayToast("No comparison plans to simulate", "error");
+      return;
+    }
+
+    setIsLoading(true);
+    displayToast("Calculating comparison simulations...");
+
+    try {
+      // Filter only selected plans
+      const selectedPlans = comparisonPlans.filter(plan => 
+        selectedComparisonPlans.includes(plan.id)
+      );
+
+      // Calculate simulations for each plan
+      const simulations = selectedPlans.map(plan => {
+        const planEvalPrice = toNumber(plan.evalPrice);
+        const planEvalPassRate = toNumber(plan.evalPassRate) / 100;
+        const planSimFundedRate = toNumber(plan.simFundedRate) / 100;
+        const planAvgPayout = toNumber(plan.avgPayout);
+        const planPurchaseToPayoutRate = planEvalPassRate * planSimFundedRate;
+        
+        // Calculate base margins for this plan
+        const planBaseMargins = calculateMargins(
+          planEvalPrice,
+          planPurchaseToPayoutRate,
+          planAvgPayout,
+          plan.useActivationFee,
+          toNumber(plan.activationFee),
+          planEvalPassRate,
+          toNumber(plan.avgLiveSaved),
+          toNumber(plan.avgLivePayout),
+          plan.includeLive
+        );
+
+        // Generate simulation ranges for this plan - create more focused ranges
+        // For Eval Price: Focus between 25% below and 50% above current price
+        const planEvalPriceRange = Array.from(
+          { length: SIMULATION_STEPS }, 
+          (_, i) => planEvalPrice * (0.75 + (0.75 * i / (SIMULATION_STEPS - 1)))
+        ).sort((a, b) => b - a); // Sort in descending order like the original
+        
+        // For PTR: Focus on range from 0 to 2x the current rate, or max 100%
+        const maxPtrRate = Math.min(1.0, planPurchaseToPayoutRate * 2);
+        const planPtrRange = Array.from(
+          { length: SIMULATION_STEPS }, 
+          (_, i) => (maxPtrRate * i / (SIMULATION_STEPS - 1))
+        );
+        
+        // For Average Payout: Focus on range from 25% below to 3x the current payout
+        const planAvgPayoutRange = Array.from(
+          { length: SIMULATION_STEPS }, 
+          (_, i) => planAvgPayout * (0.75 + (2.25 * i / (SIMULATION_STEPS - 1)))
+        );
+
+        // Calculate margins for each simulation point
+        const evalPriceSim = planEvalPriceRange.map(ep => calculateMargins(
+          ep, planPurchaseToPayoutRate, planAvgPayout, 
+          plan.useActivationFee, toNumber(plan.activationFee), 
+          planEvalPassRate, toNumber(plan.avgLiveSaved), 
+          toNumber(plan.avgLivePayout), plan.includeLive
+        ));
+        
+        const ptrSim = planPtrRange.map(ptr => calculateMargins(
+          planEvalPrice, ptr, planAvgPayout, 
+          plan.useActivationFee, toNumber(plan.activationFee), 
+          planEvalPassRate, toNumber(plan.avgLiveSaved), 
+          toNumber(plan.avgLivePayout), plan.includeLive
+        ));
+        
+        const avgPayoutSim = planAvgPayoutRange.map(ap => calculateMargins(
+          planEvalPrice, planPurchaseToPayoutRate, ap, 
+          plan.useActivationFee, toNumber(plan.activationFee), 
+          planEvalPassRate, toNumber(plan.avgLiveSaved), 
+          toNumber(plan.avgLivePayout), plan.includeLive
+        ));
+        
+        // Extract margins and ensure no negative values
+        const evalPriceMargins = evalPriceSim.map(p => Math.max(0, p.priceMargin));
+        const ptrPriceMargins = ptrSim.map(p => Math.max(0, p.priceMargin));
+        const avgPayoutPriceMargins = avgPayoutSim.map(p => Math.max(0, p.priceMargin));
+        
+        // Find thresholds for each simulation
+        const evalThresholds = findMarginThresholds(planEvalPriceRange, evalPriceMargins, evalPriceMargins);
+        const ptrThresholds = findMarginThresholds(planPtrRange, ptrPriceMargins, ptrPriceMargins);
+        const avgPayoutThresholds = findMarginThresholds(planAvgPayoutRange, avgPayoutPriceMargins, avgPayoutPriceMargins);
+
+        // Calculate Payout vs Rate combinations for 50% Margins - more focused
+        const combinationsPM = [];
+        const numSteps = 100;
+        const minRate = 0.001;
+        // More focused rate range - up to 3x current rate but max 100%
+        const maxRate = Math.min(1.0, planPurchaseToPayoutRate * 3);
+
+        const getPMMarginForPayout = (rate: number) => (payout: number) => 
+            calculateMargins(planEvalPrice, rate, payout, 
+                plan.useActivationFee, toNumber(plan.activationFee), 
+                planEvalPassRate, toNumber(plan.avgLiveSaved), 
+                toNumber(plan.avgLivePayout), plan.includeLive).priceMargin;
+
+        for (let i = 0; i < numSteps; i++) {
+          const currentRate = minRate + (maxRate - minRate) * i / (numSteps - 1);
+          
+          let payoutFor50PM: number | null = null;
+          try {
+            payoutFor50PM = findThresholdValue(
+                "Avg Payout", 
+                getPMMarginForPayout(currentRate), 
+                0.5, 
+                planEvalPrice, 
+                currentRate,
+                planAvgPayout,
+                plan.useActivationFee,
+                toNumber(plan.activationFee),
+                planEvalPassRate
+            );
+          } catch (err) { 
+            console.error(`Error finding PM payout for rate ${currentRate}:`, err); 
+          }
+
+          if (payoutFor50PM !== null && payoutFor50PM > 0) {
+            combinationsPM.push({ x: currentRate, y: payoutFor50PM });
+          }
+        }
+
+        // Calculate Eval Price vs Rate combinations for 50% Margins - more focused ranges
+        const evalPriceRateResults: EvalPriceRateCombination[] = [];
+        const numEvalPrices = 5;
+        
+        // Generate eval price steps from 50% to 150% of current eval price - more relevant
+        const evalPriceSteps = Array.from({ length: numEvalPrices }, (_, i) => 
+          planEvalPrice * (0.5 + i * 0.25));
+        
+        // For each eval price, calculate a curve
+        evalPriceSteps.forEach(currentEvalPrice => {
+          const dataPoints: Array<{x: number, y: number}> = [];
+          
+          const getPMMarginForPayout = (rate: number) => (payout: number) => 
+            calculateMargins(currentEvalPrice, rate, payout, 
+                plan.useActivationFee, toNumber(plan.activationFee), 
+                planEvalPassRate, toNumber(plan.avgLiveSaved), 
+                toNumber(plan.avgLivePayout), plan.includeLive).priceMargin;
+          
+          // For each rate, find the payout that gives exactly 50% margin at this eval price
+          for (let i = 0; i < numSteps; i++) {
+            const currentRate = minRate + (maxRate - minRate) * i / (numSteps - 1);
+            
+            try {
+              const payoutFor50PM = findThresholdValue(
+                "Avg Payout", 
+                getPMMarginForPayout(currentRate), 
+                0.5, 
+                currentEvalPrice,
+                currentRate,
+                planAvgPayout,
+                plan.useActivationFee,
+                toNumber(plan.activationFee),
+                planEvalPassRate
+              );
+              
+              if (payoutFor50PM !== null && payoutFor50PM > 0) {
+                dataPoints.push({ x: currentRate, y: payoutFor50PM });
+              }
+            } catch (err) { 
+              console.error(`Error finding payout for rate ${currentRate} at eval price ${currentEvalPrice}:`, err); 
+            }
+          }
+          
+          evalPriceRateResults.push({
+            evalPrice: currentEvalPrice,
+            dataPoints: dataPoints
+          });
+        });
+
+        // Calculate exact 50% threshold values
+        const variables = ["Eval Price", "Purchase to Payout Rate", "Avg Payout"];
+        const planExactThresholds = variables.map(varName => {
+          let pmValue: number | null = null;
+          try {
+            pmValue = find50PercentMarginValue(
+              varName, 
+              planEvalPrice, 
+              planPurchaseToPayoutRate, 
+              planAvgPayout, 
+              plan.useActivationFee, 
+              toNumber(plan.activationFee), 
+              planEvalPassRate, 
+              toNumber(plan.avgLiveSaved), 
+              toNumber(plan.avgLivePayout), 
+              plan.includeLive
+            );
+          } catch (err) { 
+            console.error(`Error finding PM threshold for ${varName}:`, err); 
+          }
+          
+          const marginsAtPMValue = pmValue !== null ? calculateMargins(
+            varName === "Eval Price" ? pmValue : planEvalPrice,
+            varName === "Purchase to Payout Rate" ? pmValue : planPurchaseToPayoutRate,
+            varName === "Avg Payout" ? pmValue : planAvgPayout,
+            plan.useActivationFee,
+            toNumber(plan.activationFee),
+            planEvalPassRate,
+            toNumber(plan.avgLiveSaved),
+            toNumber(plan.avgLivePayout),
+            plan.includeLive
+          ) : null;
+
+          return {
+            name: varName,
+            pmValue: pmValue,
+            marginsAtPMValue: marginsAtPMValue
+          };
+        });
+
+        return {
+          id: plan.id,
+          name: plan.name,
+          purchaseToPayoutRate: planPurchaseToPayoutRate,
+          baseMargins: planBaseMargins,
+          evaluationPriceData: {
+            values: planEvalPriceRange,
+            priceMargins: evalPriceMargins,
+            revenue: evalPriceSim.map(p => p.revenueEval),
+            cost: evalPriceSim.map(p => p.cost),
+            netRevenue: evalPriceSim.map(p => p.netRevenue),
+            totalRevenue: evalPriceSim.map(p => p.grossRevenue),
+            totalNetRevenue: evalPriceSim.map(p => p.netRevenue)
+          },
+          purchaseToPayoutRateData: {
+            values: planPtrRange,
+            priceMargins: ptrPriceMargins,
+            revenue: ptrSim.map(p => p.revenueEval),
+            cost: ptrSim.map(p => p.cost),
+            netRevenue: ptrSim.map(p => p.netRevenue),
+            totalRevenue: ptrSim.map(p => p.grossRevenue),
+            totalNetRevenue: ptrSim.map(p => p.netRevenue)
+          },
+          averagePayoutData: {
+            values: planAvgPayoutRange,
+            priceMargins: avgPayoutPriceMargins,
+            revenue: avgPayoutSim.map(p => p.revenueEval),
+            cost: avgPayoutSim.map(p => p.cost),
+            netRevenue: avgPayoutSim.map(p => p.netRevenue),
+            totalRevenue: avgPayoutSim.map(p => p.grossRevenue),
+            totalNetRevenue: avgPayoutSim.map(p => p.netRevenue)
+          },
+          payoutRateData: {
+            combinationsPM: combinationsPM
+          },
+          evalPriceRateData: {
+            results: evalPriceRateResults
+          },
+          evaluationPriceThresholds: evalThresholds,
+          purchaseToPayoutRateThresholds: ptrThresholds,
+          averagePayoutThresholds: avgPayoutThresholds,
+          exactThresholds: planExactThresholds
+        };
+      });
+
+      setComparisonSimulations(simulations);
+      setIsComparingSimulations(true);
+      setIsComparisonModalOpen(false);
+      displayToast(`Successfully calculated ${simulations.length} plan simulations`);
+    } catch (err) {
+      console.error("Error calculating comparison simulations:", err);
+      displayToast(`Error calculating simulations: ${err instanceof Error ? err.message : 'Unknown error'}`, "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Function to toggle comparison mode and show modal when entering
+  const toggleComparisonMode = () => {
+    if (!isComparisonMode) {
+      // Entering comparison mode - initialize with current values and one empty plan
+      const currentPlan: ComparisonPlan = {
+        id: generateId(),
+        name: "Current Plan",
+        evalPrice,
+        evalPassRate,
+        simFundedRate,
+        avgPayout,
+        useActivationFee,
+        activationFee,
+        avgLiveSaved,
+        avgLivePayout,
+        includeLive
+      };
+      
+      const newPlan: ComparisonPlan = {
+        id: generateId(),
+        name: "Comparison Plan",
+        evalPrice: "",
+        evalPassRate: "",
+        simFundedRate: "",
+        avgPayout: "",
+        useActivationFee: false,
+        activationFee: "",
+        avgLiveSaved: "",
+        avgLivePayout: "",
+        includeLive: false
+      };
+      
+      setComparisonPlans([currentPlan, newPlan]);
+      setSelectedComparisonPlans([currentPlan.id, newPlan.id]);
+      setIsComparisonModalOpen(true);
+    } else {
+      // Exiting comparison mode
+      setComparisonPlans([]);
+      setSelectedComparisonPlans([]);
+      setComparisonSimulations([]);
+      setIsComparingSimulations(false);
+    }
+    
+    setIsComparisonMode(!isComparisonMode);
+  };
+  
+  // Function to add a new comparison plan
+  const addComparisonPlan = () => {
+    if (comparisonPlans.length >= 5) {
+      displayToast("Maximum of 5 comparison plans allowed", "error");
+      return;
+    }
+    
+    const newPlan: ComparisonPlan = {
+      id: generateId(),
+      name: `Plan ${comparisonPlans.length + 1}`,
+      evalPrice: "",
+      evalPassRate: "",
+      simFundedRate: "",
+      avgPayout: "",
+      useActivationFee: false,
+      activationFee: "",
+      avgLiveSaved: "",
+      avgLivePayout: "",
+      includeLive: false
+    };
+    
+    setComparisonPlans([...comparisonPlans, newPlan]);
+    setSelectedComparisonPlans([...selectedComparisonPlans, newPlan.id]);
+  };
+  
+  // Function to remove a comparison plan
+  const removeComparisonPlan = (id: string) => {
+    if (comparisonPlans.length <= 2) {
+      displayToast("Minimum of 2 comparison plans required", "error");
+      return;
+    }
+    
+    setComparisonPlans(comparisonPlans.filter(plan => plan.id !== id));
+    setSelectedComparisonPlans(selectedComparisonPlans.filter(planId => planId !== id));
+  };
+  
+  // Function to toggle selection of a comparison plan
+  const togglePlanSelection = (id: string) => {
+    if (selectedComparisonPlans.includes(id)) {
+      if (selectedComparisonPlans.length <= 1) {
+        displayToast("At least one plan must be selected", "error");
+        return;
+      }
+      setSelectedComparisonPlans(selectedComparisonPlans.filter(planId => planId !== id));
+    } else {
+      setSelectedComparisonPlans([...selectedComparisonPlans, id]);
+    }
+  };
+  
+  // Function to update a comparison plan
+  const updateComparisonPlan = (id: string, field: keyof ComparisonPlan, value: any) => {
+    setComparisonPlans(comparisonPlans.map(plan => 
+      plan.id === id ? { ...plan, [field]: value } : plan
+    ));
+  };
+  
+  // Function to download comparison data
+  const downloadComparisonData = () => {
+    if (comparisonPlans.length === 0) {
+      displayToast("No comparison data to download", "error");
+      return;
+    }
+    
+    try {
+      // Create CSV headers with expanded margin analysis
+      const headers = [
+        "Plan Name", 
+        "Eval Price ($)", 
+        "Eval Pass Rate (%)", 
+        "Sim Funded Rate (%)", 
+        "Purchase to Payout Rate (%)",
+        "Avg Payout ($)", 
+        "Current Combined Margin (%)",
+        "Current Price Margin (%)",
+        // Evaluation Price thresholds
+        "Eval Price at 50% Combined Margin ($)",
+        "Eval Price at 20% Combined Margin ($)",
+        "Eval Price at 80% Combined Margin ($)",
+        // PTR thresholds
+        "PTR at 50% Combined Margin (%)",
+        "PTR at 20% Combined Margin (%)",
+        "PTR at 80% Combined Margin (%)",
+        // Avg Payout thresholds
+        "Avg Payout at 50% Combined Margin ($)",
+        "Avg Payout at 20% Combined Margin ($)",
+        "Avg Payout at 80% Combined Margin ($)",
+        // Activation Fee info if any plans use it
+        ...(comparisonPlans.some(p => p.useActivationFee) ? ["Activation Fee ($)"] : []),
+        // Live Account info if any plan includes it
+        ...(comparisonPlans.some(p => p.includeLive) ? [
+          "Include Live Accounts",
+          "Avg Live Saved (%)",
+          "Avg Live Payout ($)"
+        ] : [])
+      ];
+      
+      // Helper to find margin threshold for a given percentage within the simulation data
+      const findMarginThresholdAtPercentage = (values: number[], margins: number[], targetPercentage: number): number | null => {
+        for (let i = 0; i < values.length; i++) {
+          if (margins[i] * 100 <= targetPercentage) {
+            // If we find an exact match, return it
+            if (margins[i] * 100 === targetPercentage) {
+              return values[i];
+            }
+            
+            // Otherwise, if it's the first below the threshold and there's a previous value
+            if (i > 0) {
+              // Do linear interpolation to get a more precise value
+              const margin1 = margins[i-1] * 100;
+              const margin2 = margins[i] * 100;
+              const value1 = values[i-1];
+              const value2 = values[i];
+              
+              // If the margins are the same, avoid division by zero
+              if (margin1 === margin2) return value1;
+              
+              // Linear interpolation: value = value1 + (value2 - value1) * (targetPercentage - margin1) / (margin2 - margin1)
+              return value1 + (value2 - value1) * (targetPercentage - margin1) / (margin2 - margin1);
+            }
+            
+            return values[i];
+          }
+        }
+        return null; // Return null if threshold not found
+      };
+      
+      // Create rows for each selected plan
+      const rows = comparisonSimulations
+        .filter(sim => selectedComparisonPlans.includes(sim.id))
+        .map(sim => {
+          const plan = comparisonPlans.find(p => p.id === sim.id) || comparisonPlans[0];
+          const planPurchaseToPayoutRate = (toNumber(plan.evalPassRate) / 100) * (toNumber(plan.simFundedRate) / 100);
+          
+          // Find the margin thresholds at different percentages
+          const evalPrice50 = sim.evaluationPriceThresholds.priceThreshold || 
+                            findMarginThresholdAtPercentage(sim.evaluationPriceData.values, sim.evaluationPriceData.priceMargins, 50);
+          const evalPrice20 = findMarginThresholdAtPercentage(sim.evaluationPriceData.values, sim.evaluationPriceData.priceMargins, 20);
+          const evalPrice80 = findMarginThresholdAtPercentage(sim.evaluationPriceData.values, sim.evaluationPriceData.priceMargins, 80);
+          
+          const ptr50 = sim.purchaseToPayoutRateThresholds.priceThreshold || 
+                      findMarginThresholdAtPercentage(sim.purchaseToPayoutRateData.values, sim.purchaseToPayoutRateData.priceMargins, 50);
+          const ptr20 = findMarginThresholdAtPercentage(sim.purchaseToPayoutRateData.values, sim.purchaseToPayoutRateData.priceMargins, 20);
+          const ptr80 = findMarginThresholdAtPercentage(sim.purchaseToPayoutRateData.values, sim.purchaseToPayoutRateData.priceMargins, 80);
+          
+          const avgPayout50 = sim.averagePayoutThresholds.priceThreshold || 
+                            findMarginThresholdAtPercentage(sim.averagePayoutData.values, sim.averagePayoutData.priceMargins, 50);
+          const avgPayout20 = findMarginThresholdAtPercentage(sim.averagePayoutData.values, sim.averagePayoutData.priceMargins, 20);
+          const avgPayout80 = findMarginThresholdAtPercentage(sim.averagePayoutData.values, sim.averagePayoutData.priceMargins, 80);
+          
+          const row = [
+            plan.name,
+            toNumber(plan.evalPrice).toFixed(2),
+            toNumber(plan.evalPassRate).toFixed(2),
+            toNumber(plan.simFundedRate).toFixed(2),
+            (planPurchaseToPayoutRate * 100).toFixed(2),
+            toNumber(plan.avgPayout).toFixed(2),
+            (sim.baseMargins.priceMargin * 100).toFixed(2), // Using priceMargin as combinedMargin in base calculations
+            (sim.baseMargins.priceMargin * 100).toFixed(2),
+            // Evaluation Price thresholds
+            evalPrice50 !== null ? evalPrice50.toFixed(2) : "N/A",
+            evalPrice20 !== null ? evalPrice20.toFixed(2) : "N/A",
+            evalPrice80 !== null ? evalPrice80.toFixed(2) : "N/A",
+            // PTR thresholds
+            ptr50 !== null ? (ptr50 * 100).toFixed(2) : "N/A",
+            ptr20 !== null ? (ptr20 * 100).toFixed(2) : "N/A",
+            ptr80 !== null ? (ptr80 * 100).toFixed(2) : "N/A",
+            // Avg Payout thresholds
+            avgPayout50 !== null ? avgPayout50.toFixed(2) : "N/A",
+            avgPayout20 !== null ? avgPayout20.toFixed(2) : "N/A",
+            avgPayout80 !== null ? avgPayout80.toFixed(2) : "N/A"
+          ];
+          
+          // Add activation fee if any plan uses it
+          if (comparisonPlans.some(p => p.useActivationFee)) {
+            row.push(plan.useActivationFee ? toNumber(plan.activationFee).toFixed(2) : "N/A");
+          }
+          
+          // Add live account info if any plan includes it
+          if (comparisonPlans.some(p => p.includeLive)) {
+            row.push(
+              plan.includeLive ? "Yes" : "No",
+              plan.includeLive ? toNumber(plan.avgLiveSaved).toFixed(2) : "N/A",
+              plan.includeLive ? toNumber(plan.avgLivePayout).toFixed(2) : "N/A"
+            );
+          }
+          
+          return row;
+        });
+      
+      // Add a section with details about the comparison
+      const reportDate = new Date().toLocaleString();
+      const metadataRows = [
+        ["Comparison Report", reportDate],
+        ["Plans Compared", comparisonSimulations.filter(sim => selectedComparisonPlans.includes(sim.id)).length.toString()],
+        ["", ""], // Empty row as separator
+      ];
+      
+      // Create CSV content
+      const csvContent = [
+        ...metadataRows.map(row => row.join(',')),
+        headers.join(','),
+        ...rows.map(row => row.join(','))
+      ].join('\n');
+      
+      // Download as a CSV file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      saveAs(blob, "margin_calculator_detailed_comparison.csv");
+      displayToast("Detailed comparison data downloaded successfully");
+    } catch (err) {
+      console.error("Error downloading comparison data:", err);
+      displayToast("Error generating comparison data. See console for details.", "error");
+    }
+  };
+
+  // Helper Function to Render Simulation Content
+  const renderSimulationContent = (index: number) => {
+    // Check if we have an error to show
+    if (error) {
+      return (
+        <div className="text-red-400 bg-red-900/20 p-4 rounded-lg border border-red-800">
+          <h3 className="font-semibold mb-2">Calculation Error</h3>
+          <p>{error}</p>
+        </div>
+      );
+    }
+
+    switch (index) {
+      case 0: // Evaluation Price
+        return (
+          <EvalPriceChart 
+            data={evaluationPriceData as SimulationData} 
+            thresholds={evaluationPriceThresholds}
+            options={evalPriceOptions}
+            visibleMargins={visibleMargins}
+            toggleMargin={toggleMargin}
+            downloadData={() => downloadSimulationData(
+              {datasets: evaluationPriceData.datasets}, 
+              'Evaluation Price ($)', 
+              'eval_price_simulation.csv', 
+              val => `$${val.toFixed(2)}`
+            )}
+            includeLive={includeLive}
+          />
+        );
+      case 1: // Purchase to Payout Rate
+        return (
+          <PtrChart 
+            data={purchaseToPayoutRateData as SimulationData} 
+            thresholds={purchaseToPayoutRateThresholds}
+            options={ptrOptions}
+            visibleMargins={visibleMargins}
+            toggleMargin={toggleMargin}
+            downloadData={() => downloadSimulationData(
+              {datasets: purchaseToPayoutRateData.datasets}, 
+              'Purchase to Payout Rate (%)', 
+              'ptr_simulation.csv', 
+              val => `${(val * 100).toFixed(2)}%`
+            )}
+            includeLive={includeLive}
+          />
+        );
+      case 2: // Average Payout
+        return (
+          <AvgPayoutChart 
+            data={averagePayoutData as SimulationData} 
+            thresholds={averagePayoutThresholds}
+            options={avgPayoutOptions}
+            visibleMargins={visibleMargins}
+            toggleMargin={toggleMargin}
+            downloadData={() => downloadSimulationData(
+              {datasets: averagePayoutData.datasets}, 
+              'Average Payout ($)', 
+              'avg_payout_simulation.csv', 
+              val => `$${val.toFixed(2)}`
+            )}
+            includeLive={includeLive}
+          />
+        );
+      case 3: // Payout vs Rate @ 50%
+        return (
+          <PayoutRateChart 
+            chartData={payoutRateChartData} 
+            chartOptions={payoutRateChartOptions}
+            visibleMargins={visibleMargins}
+            toggleMargin={toggleMargin}
+            downloadData={() => {
+              // Ensure all data points have numeric y values
+              const safeDatasets = payoutRateChartData.datasets.map(ds => ({
+                ...ds,
+                data: ds.data.map(point => ({
+                  x: point.x,
+                  y: typeof point.y === 'string' ? parseFloat(point.y) : point.y
+                }))
+              }));
+              
+              downloadSimulationData(
+                { datasets: safeDatasets },
+                'Purchase to Payout Rate (%)', 
+                'payout_vs_rate_simulation.csv', 
+                val => `${(val * 100).toFixed(2)}%`
+              );
+            }}
+          />
+        );
+      case 4: // Eval Price vs Rate @ 50%
+        return (
+          <EvalPriceRateChart 
+            chartData={evalPriceRateChartData} 
+            chartOptions={evalPriceRateChartOptions}
+            visibleMargins={visibleMargins}
+            toggleMargin={toggleMargin}
+            downloadData={() => downloadSimulationData(
+              evalPriceRateChartData, 
+              'Purchase to Payout Rate (%)', 
+              'eval_price_vs_rate_simulation.csv', 
+              val => `${(val * 100).toFixed(2)}%`
+            )}
+          />
+        );
+      case 5: // Exact Thresholds
+        return isComparingSimulations ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-2 px-3">Plan</th>
+                  <th className="text-center py-2 px-3">Evaluation Price</th>
+                  <th className="text-center py-2 px-3">Purchase to Payout Rate</th>
+                  <th className="text-center py-2 px-3">Average Payout</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisonSimulations.map(sim => (
+                  <tr key={sim.id} className="border-b border-border/50 hover:bg-card/30">
+                    <td className="py-2 px-3 font-medium">{sim.name}</td>
+                    <td className="text-center py-2 px-3">
+                      {sim.exactThresholds[0].pmValue !== null 
+                        ? `$${sim.exactThresholds[0].pmValue.toFixed(2)}` 
+                        : 'N/A'}
+                    </td>
+                    <td className="text-center py-2 px-3">
+                      {sim.exactThresholds[1].pmValue !== null 
+                        ? `${(sim.exactThresholds[1].pmValue * 100).toFixed(2)}%` 
+                        : 'N/A'}
+                    </td>
+                    <td className="text-center py-2 px-3">
+                      {sim.exactThresholds[2].pmValue !== null 
+                        ? `$${sim.exactThresholds[2].pmValue.toFixed(2)}` 
+                        : 'N/A'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <ThresholdsTable 
+            thresholds={exactThresholds}
+            evalPrice={evalPrice}
+            purchaseToPayoutRate={purchaseToPayoutRate}
+            avgPayout={avgPayout}
+            includeLive={includeLive}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#0E1117]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#488BF8] mx-auto"></div>
+          <p className="mt-4 text-gray-300">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#0E1117]">
+        <div className="text-center text-red-400 bg-[#262730] p-6 rounded-lg shadow-lg">
+          <p className="font-semibold">Error:</p>
+          <p className="mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-4 px-4 py-2 bg-red-500 text-[#EBF3FE] rounded hover:bg-red-600"
+          >
+            Reload Application
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen bg-background text-text_primary">
+      {/* Mobile swipe area for sidebar */}
+      <div className="swipe-area"></div>
+      
+      {/* Header */}
+      <header className="bg-surface shadow-md p-4 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <Calculator className="text-primary w-5 h-5 md:w-6 md:h-6" />
+          <h1 className="text-lg md:text-xl font-semibold">Margin Simulator</h1>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          <button
+            onClick={toggleComparisonMode}
+            className="text-sm px-3 py-1 bg-surface border border-border rounded-md hidden md:flex items-center gap-1 hover:bg-card transition-colors"
+            title="Toggle comparison mode"
+          >
+            {isComparisonMode ? "Exit Comparison" : "Compare"}
+          </button>
+
+          <button
+            onClick={handleGeneratePDFReport}
+            className="text-sm px-3 py-1 bg-primary text-white rounded-md flex items-center gap-1 hover:bg-primary/90 transition-colors"
+            disabled={isLoading}
+          >
+            <FileText className="w-4 h-4" />
+            <span className="hidden md:inline">Generate Report</span>
+          </button>
+          
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="lg:hidden p-2 text-text_secondary hover:text-text_primary"
+            aria-label="Open parameters menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        </div>
+      </header>
+
+      <div className="flex flex-grow">
+        {/* Sidebar component remains unchanged */}
+        <Sidebar
+          isSidebarOpen={isSidebarOpen}
+          setIsSidebarOpen={setIsSidebarOpen}
+          evalPrice={evalPrice}
+          setEvalPrice={setEvalPrice}
+          evalPassRate={evalPassRate}
+          setEvalPassRate={setEvalPassRate}
+          simFundedRate={simFundedRate}
+          setSimFundedRate={setSimFundedRate}
+          avgPayout={avgPayout}
+          setAvgPayout={setAvgPayout}
+          useActivationFee={useActivationFee}
+          setUseActivationFee={setUseActivationFee}
+          activationFee={activationFee}
+          setActivationFee={setActivationFee}
+          avgLiveSaved={avgLiveSaved}
+          setAvgLiveSaved={setAvgLiveSaved}
+          avgLivePayout={avgLivePayout}
+          setAvgLivePayout={setAvgLivePayout}
+          includeLive={includeLive}
+          setIncludeLive={setIncludeLive}
+          isDisabled={isComparisonMode} // Disable sidebar inputs when in comparison mode
+        />
+
+        {/* Main content */}
+        <main className="flex-grow p-4 md:p-6">
+          {/* Dashboard summary - enhanced for comparison mode */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {isComparingSimulations 
+              ? (
+                // Comparison summaries
+                <div className="col-span-1 md:col-span-3 bg-surface p-4 rounded-lg shadow-sm">
+                  <h3 className="text-sm font-medium mb-3">Comparison Summary</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 pr-4">Plan</th>
+                          <th className="text-right py-2 px-4">Eval Price</th>
+                          <th className="text-right py-2 px-4">PTR</th>
+                          <th className="text-right py-2 px-4">Avg Payout</th>
+                          <th className="text-right py-2 px-4">Price Margin</th>
+                          <th className="text-right py-2 px-4">Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {comparisonSimulations.map(sim => (
+                          <tr key={sim.id} className="border-b border-border/50 hover:bg-card/30">
+                            <td className="py-2 pr-4">{sim.name}</td>
+                            <td className="text-right py-2 px-4">${toNumber(comparisonPlans.find(p => p.id === sim.id)?.evalPrice || 0).toFixed(2)}</td>
+                            <td className="text-right py-2 px-4">{(sim.purchaseToPayoutRate * 100).toFixed(2)}%</td>
+                            <td className="text-right py-2 px-4">${toNumber(comparisonPlans.find(p => p.id === sim.id)?.avgPayout || 0).toFixed(2)}</td>
+                            <td className="text-right py-2 px-4">{(sim.baseMargins.priceMargin * 100).toFixed(2)}%</td>
+                            <td className="text-right py-2 px-4">${sim.baseMargins.netRevenue.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+              : (
+                // Regular summary
+                <>
+                  <div className="bg-surface p-4 rounded-lg shadow-sm">
+                    <h3 className="text-xs font-medium text-text_secondary mb-1">Current Margin</h3>
+                    <p className="text-xl font-bold text-primary">{(baseMargins.priceMargin * 100).toFixed(2)}%</p>
+                  </div>
+                  <div className="bg-surface p-4 rounded-lg shadow-sm">
+                    <h3 className="text-xs font-medium text-text_secondary mb-1">Revenue</h3>
+                    <p className="text-xl font-bold">${baseMargins.netRevenue.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-surface p-4 rounded-lg shadow-sm">
+                    <h3 className="text-xs font-medium text-text_secondary mb-1">Purchase to Payout Rate</h3>
+                    <p className="text-xl font-bold">{(purchaseToPayoutRate * 100).toFixed(2)}%</p>
+                  </div>
+                </>
+              )
+            }
+          </div>
+
+          {/* Chart tab navigation - enhanced */}
+          <div className="bg-surface rounded-lg shadow-sm mb-6 overflow-hidden">
+            <div className="border-b border-border">
+              <div className="flex overflow-x-auto">
+                {["Evaluation Price", "Purchase to Payout Rate", "Average Payout", "Payout Rate", "Eval Price Rate", "Thresholds"].map((tab, idx) => (
+                  <button
+                    key={idx}
+                    className={`px-4 py-3 font-medium text-sm whitespace-nowrap transition-colors ${
+                      activeTab === idx ? "border-b-2 border-primary text-primary" : "text-text_secondary hover:text-text_primary"
+                    }`}
+                    onClick={() => setActiveTab(idx)}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="p-4">
+              {renderSimulationContent(activeTab)}
+            </div>
+          </div>
+
+          {/* Chart Display Options */}
+          {activeTab !== 5 && isComparisonMode && isComparingSimulations && (
+            <div className="bg-surface rounded-lg shadow-sm p-4 mb-6">
+              <h3 className="text-sm font-medium mb-3">Chart Export</h3>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={downloadComparisonData}
+                  className="text-xs px-3 py-1 rounded-full bg-card text-text_secondary flex items-center gap-1"
+                >
+                  <Download className="w-3 h-3" />
+                  Export Comparison
+                </button>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Mobile floating action button - new element */}
+      <button
+        onClick={() => setIsSidebarOpen(true)}
+        className="lg:hidden fixed bottom-6 right-6 w-12 h-12 rounded-full bg-primary text-white shadow-lg flex items-center justify-center"
+        aria-label="Open parameters"
+      >
+        <Settings className="w-6 h-6" />
+      </button>
+
+      {/* Toast notifications - new element */}
+      {showToast.visible && (
+        <div 
+          className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-md shadow-lg text-white text-sm font-medium animate-fadeIn ${
+            showToast.type === 'success' ? 'bg-green-600' : 'bg-red-600'
+          }`}
+        >
+          {showToast.message}
+        </div>
+      )}
+
+      {/* Comparison Mode Modal */}
+      {isComparisonModalOpen && (
+        <Modal
+          title="Comparison Mode"
+          onClose={() => setIsComparisonModalOpen(false)}
+        >
+          <div className="max-h-[70vh] overflow-y-auto">
+            <p className="text-sm text-text_secondary mb-4">
+              Compare up to 5 different scenarios by adjusting the parameters below.
+            </p>
+            
+            {comparisonPlans.map((plan, index) => (
+              <div 
+                key={plan.id} 
+                className="mb-6 p-4 bg-card rounded-lg border border-border"
+              >
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id={`select-${plan.id}`}
+                      checked={selectedComparisonPlans.includes(plan.id)}
+                      onChange={() => togglePlanSelection(plan.id)}
+                      className="h-4 w-4 rounded border-border bg-background"
+                    />
+                    <input
+                      type="text"
+                      value={plan.name}
+                      onChange={(e) => updateComparisonPlan(plan.id, 'name', e.target.value)}
+                      className="text-sm font-medium bg-transparent border-b border-border px-1"
+                    />
+                  </div>
+                  
+                  {index > 0 && (
+                    <button
+                      onClick={() => removeComparisonPlan(plan.id)}
+                      className="text-text_secondary hover:text-text_primary"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Eval Price */}
+                  <div>
+                    <label htmlFor={`evalPrice-${plan.id}`} className="block text-xs font-medium text-text_secondary mb-1">
+                      Evaluation Price ($)
+                    </label>
+                    <input
+                      id={`evalPrice-${plan.id}`}
+                      type="number"
+                      value={plan.evalPrice}
+                      onChange={(e) => updateComparisonPlan(plan.id, 'evalPrice', e.target.value)}
+                      className="w-full p-2 rounded bg-background border border-border text-sm"
+                    />
+                  </div>
+                  
+                  {/* Eval Pass Rate */}
+                  <div>
+                    <label htmlFor={`evalPassRate-${plan.id}`} className="block text-xs font-medium text-text_secondary mb-1">
+                      Evaluation Pass Rate (%)
+                    </label>
+                    <input
+                      id={`evalPassRate-${plan.id}`}
+                      type="number"
+                      value={plan.evalPassRate}
+                      onChange={(e) => updateComparisonPlan(plan.id, 'evalPassRate', e.target.value)}
+                      className="w-full p-2 rounded bg-background border border-border text-sm"
+                    />
+                  </div>
+                  
+                  {/* Sim Funded Rate */}
+                  <div>
+                    <label htmlFor={`simFundedRate-${plan.id}`} className="block text-xs font-medium text-text_secondary mb-1">
+                      Sim Funded Rate (%)
+                    </label>
+                    <input
+                      id={`simFundedRate-${plan.id}`}
+                      type="number"
+                      value={plan.simFundedRate}
+                      onChange={(e) => updateComparisonPlan(plan.id, 'simFundedRate', e.target.value)}
+                      className="w-full p-2 rounded bg-background border border-border text-sm"
+                    />
+                  </div>
+                  
+                  {/* Avg Payout */}
+                  <div>
+                    <label htmlFor={`avgPayout-${plan.id}`} className="block text-xs font-medium text-text_secondary mb-1">
+                      Average Payout ($)
+                    </label>
+                    <input
+                      id={`avgPayout-${plan.id}`}
+                      type="number"
+                      value={plan.avgPayout}
+                      onChange={(e) => updateComparisonPlan(plan.id, 'avgPayout', e.target.value)}
+                      className="w-full p-2 rounded bg-background border border-border text-sm"
+                    />
+                  </div>
+                  
+                  {/* Activation Fee Toggle */}
+                  <div className="flex items-center">
+                    <input
+                      id={`useActivationFee-${plan.id}`}
+                      type="checkbox"
+                      checked={plan.useActivationFee}
+                      onChange={(e) => updateComparisonPlan(plan.id, 'useActivationFee', e.target.checked)}
+                      className="h-4 w-4 rounded border-border bg-background"
+                    />
+                    <label htmlFor={`useActivationFee-${plan.id}`} className="ml-2 text-xs font-medium text-text_secondary">
+                      Use Activation Fee
+                    </label>
+                  </div>
+                  
+                  {/* Activation Fee */}
+                  {plan.useActivationFee && (
+                    <div>
+                      <label htmlFor={`activationFee-${plan.id}`} className="block text-xs font-medium text-text_secondary mb-1">
+                        Activation Fee ($)
+                      </label>
+                      <input
+                        id={`activationFee-${plan.id}`}
+                        type="number"
+                        value={plan.activationFee}
+                        onChange={(e) => updateComparisonPlan(plan.id, 'activationFee', e.target.value)}
+                        className="w-full p-2 rounded bg-background border border-border text-sm"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Include Live Toggle */}
+                  <div className="flex items-center">
+                    <input
+                      id={`includeLive-${plan.id}`}
+                      type="checkbox"
+                      checked={plan.includeLive}
+                      onChange={(e) => updateComparisonPlan(plan.id, 'includeLive', e.target.checked)}
+                      className="h-4 w-4 rounded border-border bg-background"
+                    />
+                    <label htmlFor={`includeLive-${plan.id}`} className="ml-2 text-xs font-medium text-text_secondary">
+                      Include Live Accounts
+                    </label>
+                  </div>
+                  
+                  {/* Live Account Fields */}
+                  {plan.includeLive && (
+                    <>
+                      <div>
+                        <label htmlFor={`avgLiveSaved-${plan.id}`} className="block text-xs font-medium text-text_secondary mb-1">
+                          % Saved from MLL
+                        </label>
+                        <input
+                          id={`avgLiveSaved-${plan.id}`}
+                          type="number"
+                          value={plan.avgLiveSaved}
+                          onChange={(e) => updateComparisonPlan(plan.id, 'avgLiveSaved', e.target.value)}
+                          className="w-full p-2 rounded bg-background border border-border text-sm"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label htmlFor={`avgLivePayout-${plan.id}`} className="block text-xs font-medium text-text_secondary mb-1">
+                          Avg Live Payout ($)
+                        </label>
+                        <input
+                          id={`avgLivePayout-${plan.id}`}
+                          type="number"
+                          value={plan.avgLivePayout}
+                          onChange={(e) => updateComparisonPlan(plan.id, 'avgLivePayout', e.target.value)}
+                          className="w-full p-2 rounded bg-background border border-border text-sm"
+                        />
+                      </div>
+                    </>
+                  )}
+                  
+                  {/* Calculated PTR and Margin */}
+                  <div className="col-span-1 md:col-span-2 mt-2 p-3 bg-background rounded">
+                    <div className="flex justify-between">
+                      <div>
+                        <p className="text-xs text-text_secondary">Purchase to Payout Rate:</p>
+                        <p className="text-sm font-medium">
+                          {((toNumber(plan.evalPassRate) / 100) * (toNumber(plan.simFundedRate) / 100) * 100).toFixed(2)}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-text_secondary">Price Margin:</p>
+                        <p className="text-sm font-medium">
+                          {(() => {
+                            try {
+                              const planPTR = (toNumber(plan.evalPassRate) / 100) * (toNumber(plan.simFundedRate) / 100);
+                              const margins = calculateMargins(
+                                toNumber(plan.evalPrice),
+                                planPTR,
+                                toNumber(plan.avgPayout),
+                                plan.useActivationFee,
+                                toNumber(plan.activationFee),
+                                toNumber(plan.evalPassRate) / 100,
+                                toNumber(plan.avgLiveSaved),
+                                toNumber(plan.avgLivePayout),
+                                plan.includeLive
+                              );
+                              return `${(margins.priceMargin * 100).toFixed(2)}%`;
+                            } catch (e) {
+                              return "N/A";
+                            }
+                          })()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {comparisonPlans.length < 5 && (
+              <button
+                onClick={addComparisonPlan}
+                className="w-full p-2 border border-dashed border-border rounded-lg text-text_secondary hover:text-text_primary hover:border-primary transition-colors"
+              >
+                + Add Another Plan
+              </button>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-3 mt-6">
+            <button
+              onClick={() => setIsComparisonModalOpen(false)}
+              className="px-4 py-2 text-sm bg-card border border-border rounded hover:bg-background transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={calculateComparisonSimulations}
+              className="px-4 py-2 text-sm bg-primary text-white rounded hover:bg-primary/90 transition-colors flex items-center gap-1"
+            >
+              Compare
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+export default App;

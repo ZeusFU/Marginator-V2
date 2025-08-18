@@ -1,0 +1,2151 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { LineChart, Calculator, DollarSign, Percent, TrendingUp, Download, Settings, X, Menu, Activity } from 'lucide-react';
+import { Tab, Tabs, TabList, TabPanel } from 'react-tabs';
+import 'react-tabs/style/react-tabs.css';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ChartEvent, // For legend onClick type
+  LegendItem, // For legend onClick type
+  LegendElement, // For legend onClick type
+  ChartType // For LegendElement generic
+} from 'chart.js';
+import { Line, Bar } from 'react-chartjs-2';
+import { saveAs } from 'file-saver';
+import annotationPlugin from 'chartjs-plugin-annotation'; // Import annotation plugin
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  annotationPlugin // Register annotation plugin
+);
+
+// Constants
+const SAMPLE_SIZE = 1000;
+const SIMULATION_STEPS = 100;
+
+const ACCOUNT_SIZES = {
+  "25k": { evalPrice: 150.0, avgPayout: 750.0 },
+  "50k": { evalPrice: 170.0, avgPayout: 1250.0 },
+  "75k": { evalPrice: 245.0, avgPayout: 2000.0 },
+  "100k": { evalPrice: 330.0, avgPayout: 2500.0 },
+  "150k": { evalPrice: 360.0, avgPayout: 3750.0 }
+};
+
+// Type for account size keys
+type AccountSizeKey = keyof typeof ACCOUNT_SIZES;
+
+function calculateMargins(
+  evalPrice: number, 
+  discountPct: number, 
+  purchaseToPayoutRate: number, 
+  avgPayout: number,
+  useActivationFee: boolean,
+  activationFee: number,
+  activationFeeDiscountPct: number,
+  evalPassRate: number // Pass rate needed for Eval revenue too
+) {
+  // Revenue purely from Eval price based on pass rate
+  const evalRevenueFromEvals = evalPrice * SAMPLE_SIZE; // Removed * evalPassRate
+  const discountedEvalPrice = evalPrice * (1 - discountPct);
+  // FIX: Calculate total revenue from selling discounted evals
+  const discountedEvalRevenueFromEvals = discountedEvalPrice * SAMPLE_SIZE; // Removed * evalPassRate
+
+  // Activation Fee Revenue - Assume this IS dependent on pass rate
+  const activationFeeRevenue = useActivationFee ? activationFee * SAMPLE_SIZE * evalPassRate : 0;
+  const discountedActivationFee = useActivationFee ? activationFee * (1 - (activationFeeDiscountPct / 100)) : 0;
+  const discountedActivationFeeRevenue = useActivationFee ? discountedActivationFee * SAMPLE_SIZE * evalPassRate : 0;
+
+  // Total Gross Revenues
+  const revenueEval = evalRevenueFromEvals + activationFeeRevenue;
+  const revenueDiscountedEval = discountedEvalRevenueFromEvals + discountedActivationFeeRevenue;
+  
+  const cost = purchaseToPayoutRate * avgPayout * SAMPLE_SIZE;
+  const netRevenue = revenueEval - cost;
+  const netDiscountedRevenue = revenueDiscountedEval - cost;
+  
+  // Margins based on TOTAL gross revenue
+  const priceMargin = revenueEval > 0 ? netRevenue / revenueEval : 0;
+  const discountedPriceMargin = revenueDiscountedEval > 0 ? netDiscountedRevenue / revenueDiscountedEval : 0;
+  
+  return {
+    priceMargin,
+    discountedPriceMargin,
+    revenueEval, // Total Gross Revenue (Eval Price + Fees)
+    revenueDiscountedEval, // Total Gross Revenue (Discounted Eval Price + Disc. Fees)
+    cost,
+    netRevenue,
+    netDiscountedRevenue,
+    discountedEvalPrice,
+    // Return components for display
+    evalRevenueFromEvals, // Revenue just from Evals
+    discountedEvalRevenueFromEvals, 
+    activationFeeRevenue,
+    discountedActivationFeeRevenue,
+    discountedActivationFee
+  };
+}
+
+function generateSimulationData(baseValue: number, range: number, steps: number) {
+  // Ensure steps is at least 2 to avoid division by zero
+  const numSteps = Math.max(steps, 2);
+  // Adjust range calculation to avoid NaN for baseValue 0
+  const start = baseValue * (1 - range / 2);
+  const end = baseValue * (1 + range / 2);
+  // If start and end are the same (e.g., baseValue is 0), create a simple array
+  if (start === end) {
+      return Array(numSteps).fill(start);
+  }
+  return Array.from({ length: numSteps }, (_, i) => start + (end - start) * (i / (numSteps - 1)));
+}
+
+// Add new utility functions
+function findMarginThreshold(values: number[], margins: number[]) {
+  for (let i = 0; i < values.length; i++) {
+    if (margins[i] <= 0.5) {
+      return values[i];
+    }
+  }
+  return null;
+}
+
+// Function to find the value for 50% Price Margin
+function find50PercentMarginValue(
+  varName: string,
+  evalPrice: number,
+  discountPct: number,
+  purchaseToPayoutRate: number,
+  avgPayout: number,
+  useActivationFee: boolean,
+  activationFee: number,
+  activationFeeDiscountPct: number,
+  baseEvalPassRate: number,
+  avgLiveSaved: number = 0,
+  avgLivePayout: number = 0,
+  includeLive: boolean = false
+): number | null {
+  const getMargin = (value: number) => {
+    // Pass activation fee args to calculateMargins
+    // Need to figure out which evalPassRate to use if that's the varName...
+    // For simplicity now, assume baseEvalPassRate is sufficient for the *target* calc
+    // This might need refinement if searching for Eval Pass Rate itself.
+    // FIX: Always use baseEvalPassRate, the variable being changed is handled by the switch.
+    const currentEvalPassRate = baseEvalPassRate;
+        
+    switch (varName) {
+      case "Eval Price": return calculateMargins(value, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).priceMargin;
+      case "Discount %": return calculateMargins(evalPrice, value, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).priceMargin;
+      case "Purchase to Payout Rate": return calculateMargins(evalPrice, discountPct, value, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).priceMargin;
+      case "Avg Payout": return calculateMargins(evalPrice, discountPct, purchaseToPayoutRate, value, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).priceMargin;
+      case "Avg Live Payout": return calculateMargins(evalPrice, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).priceMargin;
+      default: return NaN;
+    }
+  };
+  return findThresholdValue(varName, getMargin, 0.5, evalPrice, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, baseEvalPassRate);
+}
+
+// Function to find the value for 50% Combined Margin
+function find50PercentCombinedMarginValue(
+  varName: string,
+  evalPrice: number,
+  discountPct: number,
+  purchaseToPayoutRate: number,
+  avgPayout: number,
+  useActivationFee: boolean,
+  activationFee: number,
+  activationFeeDiscountPct: number,
+  baseEvalPassRate: number,
+  avgLiveSaved: number = 0,
+  avgLivePayout: number = 0
+): number | null {
+  const getMargin = (value: number) => {
+    const currentEvalPassRate = baseEvalPassRate;
+        
+    switch (varName) {
+      case "Eval Price": return calculateMargins(value, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).combinedMargin;
+      case "Discount %": return calculateMargins(evalPrice, value, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).combinedMargin;
+      case "Purchase to Payout Rate": return calculateMargins(evalPrice, discountPct, value, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).combinedMargin;
+      case "Avg Payout": return calculateMargins(evalPrice, discountPct, purchaseToPayoutRate, value, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).combinedMargin;
+      case "Avg Live Payout": return calculateMargins(evalPrice, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).combinedMargin;
+      default: return NaN;
+    }
+  };
+  return findThresholdValue(varName, getMargin, 0.5, evalPrice, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, baseEvalPassRate);
+}
+
+// Function to find the value for 50% Discounted Price Margin
+function find50PercentDiscountedMarginValue(
+  varName: string,
+  evalPrice: number,
+  discountPct: number,
+  purchaseToPayoutRate: number,
+  avgPayout: number,
+  useActivationFee: boolean,
+  activationFee: number,
+  activationFeeDiscountPct: number,
+  baseEvalPassRate: number,
+  avgLiveSaved: number = 0,
+  avgLivePayout: number = 0,
+  includeLive: boolean = false
+): number | null {
+  const getMargin = (value: number) => {
+     // FIX: Always use baseEvalPassRate, the variable being changed is handled by the switch.
+     const currentEvalPassRate = baseEvalPassRate;
+    switch (varName) {
+      case "Eval Price": return calculateMargins(value, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).discountedPriceMargin;
+      case "Discount %": return calculateMargins(evalPrice, value, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).discountedPriceMargin;
+      case "Purchase to Payout Rate": return calculateMargins(evalPrice, discountPct, value, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).discountedPriceMargin;
+      case "Avg Payout": return calculateMargins(evalPrice, discountPct, purchaseToPayoutRate, value, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).discountedPriceMargin;
+      case "Avg Live Payout": return calculateMargins(evalPrice, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).discountedPriceMargin;
+      default: return NaN;
+    }
+  };
+  return findThresholdValue(varName, getMargin, 0.5, evalPrice, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, baseEvalPassRate);
+}
+
+// Generic function to find the variable value for a target margin using binary search
+function findThresholdValue(
+  varName: string,
+  getMarginFn: (value: number) => number,
+  targetMargin: number,
+  evalPrice: number,
+  discountPct: number, // Note: this is base discount, not the value being searched if varName === "Discount %"
+  purchaseToPayoutRate: number,
+  avgPayout: number,
+  useActivationFee: boolean,
+  activationFee: number,
+  activationFeeDiscountPct: number,
+  baseEvalPassRate: number
+): number | null {
+
+  let min, max;
+  // Set wider ranges based on Streamlit example
+  switch (varName) {
+    case "Eval Price":
+      min = evalPrice * 0.1; // 10% of base
+      max = evalPrice * 2;   // 200% of base
+      break;
+    case "Discount %":
+      min = 0;   // 0%
+      max = 0.99; // 99%
+      break;
+    case "Purchase to Payout Rate":
+      min = 0;   // 0%
+      // FIX: Use a fixed range [0, 1] instead of relative to current rate
+      max = 1.0; // 100%
+      break;
+    case "Avg Payout":
+      min = avgPayout * 0.1; // 10% of base
+      max = avgPayout * 10;  // 1000% of base
+      break;
+    default:
+      return null;
+  }
+
+  let left = min;
+  let right = max;
+  let result = null;
+  const iterations = 100; 
+  const tolerance = 0.001;
+
+  // Determine if increasing the variable increases or decreases the margin
+  // Check margin slightly above min vs slightly more above min
+  const marginNearMin = getMarginFn(min + (max - min) * 0.01); 
+  const marginFurtherFromMin = getMarginFn(min + (max - min) * 0.02);
+  const increasingVarIncreasesMargin = marginFurtherFromMin > marginNearMin;
+
+  for (let i = 0; i < iterations; i++) {
+    if (right < left) break; // Should not happen in correct binary search
+    const mid = left + (right - left) / 2;
+    const margin = getMarginFn(mid);
+
+    if (isNaN(margin)) break; // Stop if calculation failed
+
+    if (Math.abs(margin - targetMargin) < tolerance) {
+      result = mid;
+      break;
+    } 
+
+    // Adjust search space
+    if (margin < targetMargin) {
+      // Margin is too low. 
+      if (increasingVarIncreasesMargin) {
+        left = mid; // Need higher variable value
+      } else {
+        right = mid; // Need lower variable value
+      }
+    } else {
+      // Margin is too high.
+      if (increasingVarIncreasesMargin) {
+        right = mid; // Need lower variable value
+      } else {
+        left = mid; // Need higher variable value
+      }
+    }
+    
+    if (Math.abs(right - left) < 1e-9) break; // Bounds are too close
+  }
+
+  // Fallback check if exact match not found
+  if (result === null) {
+      const marginAtLeft = getMarginFn(left);
+      const marginAtRight = getMarginFn(right);
+      if (Math.abs(marginAtLeft - targetMargin) < Math.abs(marginAtRight - targetMargin)) {
+          result = left;
+      } else {
+          result = right;
+      }
+      // If even the closest bound isn't close enough, return null
+      if (Math.abs(getMarginFn(result) - targetMargin) > 0.05) { 
+           console.warn(`Could not find accurate ${targetMargin*100}% threshold for ${varName} within range [${min}, ${max}]. Closest: ${result}`);
+           result = null; // Return null if not reasonably close
+      }
+  }
+
+  // Final check: ensure result is within the initial min/max bounds
+  if (result !== null && (result < min || result > max)) {
+      console.warn(`Threshold result ${result} for ${varName} is outside search bounds [${min}, ${max}].`);
+      result = null;
+  }
+
+  return result;
+}
+
+// Add new utility function for finding margin thresholds
+function findMarginThresholds(values: number[], priceMargins: number[], discountedMargins: number[], combinedMargins: number[]) {
+  let priceThreshold = null;
+  let discountedThreshold = null;
+  let combinedThreshold = null;
+  
+  for (let i = 0; i < values.length; i++) {
+    if (priceThreshold === null && priceMargins[i] <= 0.5) {
+      priceThreshold = values[i];
+    }
+    if (discountedThreshold === null && discountedMargins[i] <= 0.5) {
+      discountedThreshold = values[i];
+    }
+    if (combinedThreshold === null && combinedMargins[i] <= 0.5) {
+      combinedThreshold = values[i];
+    }
+    if (priceThreshold !== null && discountedThreshold !== null && combinedThreshold !== null) {
+      break;
+    }
+  }
+  
+  return { priceThreshold, discountedThreshold, combinedThreshold };
+}
+
+// Helper component for Input Fields
+interface InputFieldProps {
+  label: string;
+  id: string;
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+}
+
+const InputField: React.FC<InputFieldProps> = ({ label, id, value, onChange, min, max, step, unit }) => (
+  <div>
+    <label htmlFor={id} className="block text-xs font-medium text-text_secondary mb-1">
+      {label} {unit && `(${unit})`}
+    </label>
+    <input
+      type="number"
+      id={id}
+      value={value}
+      onChange={(e) => onChange(parseFloat(e.target.value) || 0)} 
+      min={min}
+      max={max}
+      step={step}
+      className="w-full px-3 py-1.5 bg-card border border-gray-600 rounded-md shadow-sm focus:outline-none focus:bg-gray-700 hover:bg-gray-700 focus:border-gray-500 text-text_primary text-sm transition-colors duration-150"
+    />
+  </div>
+);
+
+// Helper component for Accordion-style Details Row
+interface DetailsRowProps {
+  summaryLabel: string;
+  summaryValue: string | number;
+  children?: React.ReactNode; // Content to show when expanded
+  isTopLevel?: boolean; // Optional flag for different styling
+  valueClass?: string; // Optional class for the value
+}
+
+const DetailsRow: React.FC<DetailsRowProps> = ({ 
+  summaryLabel, 
+  summaryValue, 
+  children, 
+  isTopLevel = false, 
+  valueClass = '' 
+}) => (
+  // Use group state for arrow rotation
+  <details className="group border-b border-card last:border-b-0 text-text_primary">
+    <summary className={`flex justify-between items-center list-none cursor-pointer hover:bg-card px-1 py-1.5 rounded ${isTopLevel ? 'font-semibold text-base' : 'text-sm'}`}>
+      <span className={`${isTopLevel ? 'text-secondary' : 'text-text_secondary'}`}>{summaryLabel}</span>
+      <div className="flex items-center">
+         <span className={`ml-2 font-medium ${isTopLevel ? 'text-lg' : 'text-sm'} ${valueClass}`}>{summaryValue}</span>
+          {/* Simple SVG Chevron for dropdown indicator */}
+         {children && (
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 ml-1 text-gray-500 group-open:rotate-90 transition-transform duration-200">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+            </svg>
+         )}
+      </div>
+    </summary>
+    {children && (
+      <div className="pl-3 pr-1 pt-1.5 pb-2 text-xs space-y-1.5 bg-card rounded-b border-l-2 border-primary/50">
+        {children}
+      </div>
+    )}
+  </details>
+);
+
+function App() {
+  const [activeTab, setActiveTab] = useState(0); // Used for desktop Tabs
+  const [mobileSelectedSimIndex, setMobileSelectedSimIndex] = useState(0); // New state for mobile dropdown
+  const [activeCategory, setActiveCategory] = useState('variables'); // Track active category: 'variables', 'relationships', or 'thresholds'
+  const [isLoading, setIsLoading] = useState(false); // Default to false, calculations happen in useMemo
+  const [error, setError] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // State for mobile sidebar
+  
+  // --- Input States --- 
+  const [accountSize, setAccountSize] = useState<AccountSizeKey>("25k");
+  const [overrideEvalPriceInput, setOverrideEvalPriceInput] = useState<string>(""); // New state for override input
+  const [discountPct, setDiscountPct] = useState(30.0); // Use float for consistency
+  const [evalPassRate, setEvalPassRate] = useState(27.01);
+  const [simFundedRate, setSimFundedRate] = useState(4.80); // Use float
+  // Avg Payout needs to update when account size changes
+  const [avgPayoutInput, setAvgPayoutInput] = useState<number | string>(ACCOUNT_SIZES[accountSize].avgPayout);
+
+  // --- New Activation Fee State ---
+  const [useActivationFee, setUseActivationFee] = useState(false);
+  const [activationFee, setActivationFee] = useState(50); // Example default fee
+  const [activationFeeDiscountPct, setActivationFeeDiscountPct] = useState(0); // Example default discount
+
+  // --- Live Accounts State ---
+  const [avgLiveSaved, setAvgLiveSaved] = useState(0); // Default to 0
+  const [avgLivePayout, setAvgLivePayout] = useState(0); // Default to 0
+  const [includeLive, setIncludeLive] = useState(false); // Toggle for including Live revenue
+
+  // --- Chart Display State ---
+  // const [showDiscountedMargin, setShowDiscountedMargin] = useState(false); // State to toggle margin type
+
+  // Add state for each chart's visible margins
+  const [visibleMargins, setVisibleMargins] = useState({
+    evalPrice: { priceMargin: true, discountedMargin: false },
+    ptrRate: { priceMargin: true, discountedMargin: false },
+    avgPayout: { priceMargin: true, discountedMargin: false },
+    payoutRate: { priceMargin: true, discountedMargin: false },
+    evalPriceRate: { priceMargin: true, discountedMargin: false },
+    avgLivePayout: { priceMargin: true, discountedMargin: false }
+  });
+
+  // Helper to toggle a specific margin for a specific chart
+  const toggleMargin = (chart: keyof typeof visibleMargins, margin: 'priceMargin' | 'discountedMargin') => {
+    setVisibleMargins(prev => ({
+      ...prev,
+      [chart]: {
+        ...prev[chart],
+        [margin]: !prev[chart][margin]
+      }
+    }));
+  };
+
+  // Effect to update avgPayout and clear override when accountSize changes
+  useEffect(() => {
+    setAvgPayoutInput(ACCOUNT_SIZES[accountSize].avgPayout);
+    setOverrideEvalPriceInput(""); // Clear override when size changes
+    setUseActivationFee(false); // Optionally reset activation fee use on size change
+  }, [accountSize]);
+
+  // Ensure avgPayout is a number for calculations
+  const avgPayout = typeof avgPayoutInput === 'number' ? avgPayoutInput : parseFloat(avgPayoutInput) || ACCOUNT_SIZES[accountSize].avgPayout;
+
+  // Determine Eval Price: Use override if valid, otherwise use default
+  const evalPrice = useMemo(() => {
+      const override = parseFloat(overrideEvalPriceInput);
+      if (!isNaN(override) && override > 0) {
+          return override;
+      }
+      return ACCOUNT_SIZES[accountSize].evalPrice;
+  }, [accountSize, overrideEvalPriceInput]);
+
+  // Need direct evalPassRate for fee calculation
+  const currentEvalPassRate = useMemo(() => evalPassRate / 100, [evalPassRate]);
+  
+  // Recalculate purchaseToPayoutRate using currentEvalPassRate
+  const purchaseToPayoutRate = useMemo(() => currentEvalPassRate * (simFundedRate / 100), [currentEvalPassRate, simFundedRate]);
+
+  const baseMargins = useMemo(() => {
+    try {
+      return calculateMargins(
+        evalPrice, 
+        discountPct / 100, 
+        purchaseToPayoutRate, 
+        avgPayout,
+        useActivationFee,
+        activationFee,
+        activationFeeDiscountPct,
+        currentEvalPassRate
+      );
+    } catch (err) {
+      console.error("Error calculating base margins:", err);
+      setError("Error calculating base margins. Check input values.");
+      // FIX: Return default/zero margins including new fields
+      return { 
+          priceMargin: 0, discountedPriceMargin: 0, combinedMargin: 0,
+          revenueEval: 0, revenueDiscountedEval: 0, 
+          cost: 0, netRevenue: 0, netDiscountedRevenue: 0, 
+          discountedEvalPrice: 0, 
+          evalRevenueFromEvals: 0, // Add default
+          discountedEvalRevenueFromEvals: 0, // Add default
+          activationFeeRevenue: 0, 
+          discountedActivationFeeRevenue: 0, 
+          discountedActivationFee: 0
+      };
+    }
+  }, [evalPrice, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate]);
+
+  // --- Simulation Ranges --- (Expanded based on Streamlit logic)
+  const evalPriceRange = useMemo(() => {
+      const minPrice = evalPrice * 0.1;
+      // Generate descending range from evalPrice down to minPrice
+      return Array.from({ length: SIMULATION_STEPS }, (_, i) => 
+          evalPrice - (evalPrice - minPrice) * i / (SIMULATION_STEPS - 1)
+      );
+  }, [evalPrice]);
+  
+  const ptrRange = useMemo(() => {
+      const maxPtr = Math.min(1.0, purchaseToPayoutRate * 10); // Limit max to 1.0 or 10x base
+      return Array.from({ length: SIMULATION_STEPS }, (_, i) => 0 + (maxPtr - 0) * i / (SIMULATION_STEPS - 1));
+  }, [purchaseToPayoutRate]);
+
+  const avgPayoutRange = useMemo(() => 
+      Array.from({ length: SIMULATION_STEPS }, (_, i) => (avgPayout * 0.1) + (avgPayout * (10 - 0.1)) * i / (SIMULATION_STEPS - 1))
+  , [avgPayout]);
+
+  // Live payout range for simulations
+  const avgLivePayoutRange = useMemo(() => 
+      Array.from({ length: SIMULATION_STEPS }, (_, i) => (avgLivePayout * 0.1) + (avgLivePayout * (10 - 0.1)) * i / (SIMULATION_STEPS - 1))
+  , [avgLivePayout]);
+
+  // --- Calculate Margins for Simulations --- 
+  const { 
+    evaluationPriceData, 
+    purchaseToPayoutRateData, 
+    averagePayoutData,
+    averageLivePayoutData,
+    evaluationPriceThresholds,
+    purchaseToPayoutRateThresholds,
+    averagePayoutThresholds,
+    averageLivePayoutThresholds
+  } = useMemo(() => {
+    try {
+      // Pass activation fee args to all calculateMargins calls
+      const evalPriceSim = evalPriceRange.map(ep => calculateMargins(ep, discountPct / 100, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate));
+      const ptrSim = ptrRange.map(ptr => calculateMargins(evalPrice, discountPct / 100, ptr, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate)); // Note: ptr changes eval pass rate implicitly, need careful handling if fee depends on pass rate *during* sim
+      const avgPayoutSim = avgPayoutRange.map(ap => calculateMargins(evalPrice, discountPct / 100, purchaseToPayoutRate, ap, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate));
+      const avgLivePayoutSim = avgLivePayoutRange.map(alp => calculateMargins(evalPrice, discountPct / 100, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate));
+      
+      // Extract margins for threshold calculation
+      const evalPriceMargins = evalPriceSim.map(p => p.priceMargin);
+      const evalDiscountedMargins = evalPriceSim.map(p => p.discountedPriceMargin);
+      const evalCombinedMargins = evalPriceSim.map(p => p.combinedMargin);
+      
+      const ptrPriceMargins = ptrSim.map(p => p.priceMargin);
+      const ptrDiscountedMargins = ptrSim.map(p => p.discountedPriceMargin);
+      const ptrCombinedMargins = ptrSim.map(p => p.combinedMargin);
+      
+      const avgPayoutPriceMargins = avgPayoutSim.map(p => p.priceMargin);
+      const avgPayoutDiscountedMargins = avgPayoutSim.map(p => p.discountedPriceMargin);
+      const avgPayoutCombinedMargins = avgPayoutSim.map(p => p.combinedMargin);
+      
+      const avgLivePayoutPriceMargins = avgLivePayoutSim.map(p => p.priceMargin);
+      const avgLivePayoutDiscountedMargins = avgLivePayoutSim.map(p => p.discountedPriceMargin);
+      const avgLivePayoutCombinedMargins = avgLivePayoutSim.map(p => p.combinedMargin);
+
+      // Find thresholds
+      const evalThresholds = findMarginThresholds(evalPriceRange, evalPriceMargins, evalDiscountedMargins, evalCombinedMargins);
+      const ptrThresholds = findMarginThresholds(ptrRange, ptrPriceMargins, ptrDiscountedMargins, ptrCombinedMargins);
+      const avgPayoutThresholds = findMarginThresholds(avgPayoutRange, avgPayoutPriceMargins, avgPayoutDiscountedMargins, avgPayoutCombinedMargins);
+      const avgLivePayoutThresholds = findMarginThresholds(avgLivePayoutRange, avgLivePayoutPriceMargins, avgLivePayoutDiscountedMargins, avgLivePayoutCombinedMargins);
+
+      // --- Data Formatting for Charts ---
+      
+      // Format for linear scale (x = number, y = number)
+      const formatLinearData = (range: number[], values: number[]) => {
+         return range.map((xValue, index) => ({ x: xValue, y: values[index] ?? NaN }));
+      };
+      
+      // Helper to create datasets (used by all charts now)
+      const createDatasets = (
+        range: number[], 
+        priceMargins: number[],
+        discountedMargins: number[],
+        combinedMargins: number[],
+        chartKey: keyof typeof visibleMargins,
+        tension = 0.1
+      ) => [
+          { 
+            label: 'Price Margin', 
+            data: formatLinearData(range, priceMargins), 
+            borderColor: '#488BF8', 
+            tension: tension,
+            hidden: !visibleMargins[chartKey].priceMargin
+          },
+          { 
+            label: 'Discounted Margin', 
+            data: formatLinearData(range, discountedMargins), 
+            borderColor: '#A3C1FA', 
+            tension: tension,
+            hidden: !visibleMargins[chartKey].discountedMargin
+          },
+          { 
+            label: 'Combined Margin', 
+            data: formatLinearData(range, combinedMargins), 
+            borderColor: '#4CAF50', 
+            tension: tension,
+            hidden: !includeLive
+          }
+      ];
+
+      // Calculate revenue & cost series
+      const evalPriceRevenueSeries = evalPriceSim.map(p => p.revenueEval);
+      const evalPriceCostSeries = evalPriceSim.map(p => p.cost);
+      
+      return {
+        evaluationPriceData: {
+          values: evalPriceRange,
+          priceMargins: evalPriceMargins,
+          discountedMargins: evalDiscountedMargins,
+          combinedMargins: evalCombinedMargins,
+          revenue: evalPriceRevenueSeries,
+          cost: evalPriceCostSeries,
+          netRevenue: evalPriceRevenueSeries,
+          combinedRevenue: evalPriceRevenueSeries,
+          netCombinedRevenue: evalPriceRevenueSeries,
+          datasets: createDatasets(evalPriceRange, evalPriceMargins, evalDiscountedMargins, evalCombinedMargins, 'evalPrice', 0)
+        },
+        purchaseToPayoutRateData: {
+          values: ptrRange,
+          priceMargins: ptrPriceMargins,
+          discountedMargins: ptrDiscountedMargins,
+          combinedMargins: ptrCombinedMargins,
+          revenue: ptrSim.map(p => p.revenueEval),
+          cost: ptrSim.map(p => p.cost),
+          netRevenue: ptrSim.map(p => p.netRevenue),
+          combinedRevenue: ptrSim.map(p => p.grossCombinedRevenue),
+          netCombinedRevenue: ptrSim.map(p => p.netCombinedRevenue),
+          datasets: createDatasets(ptrRange, ptrPriceMargins, ptrDiscountedMargins, ptrCombinedMargins, 'ptrRate')
+        },
+        averagePayoutData: {
+          values: avgPayoutRange,
+          priceMargins: avgPayoutPriceMargins,
+          discountedMargins: avgPayoutDiscountedMargins,
+          combinedMargins: avgPayoutCombinedMargins,
+          revenue: avgPayoutSim.map(p => p.revenueEval),
+          cost: avgPayoutSim.map(p => p.cost),
+          netRevenue: avgPayoutSim.map(p => p.netRevenue),
+          combinedRevenue: avgPayoutSim.map(p => p.grossCombinedRevenue),
+          netCombinedRevenue: avgPayoutSim.map(p => p.netCombinedRevenue),
+          datasets: createDatasets(avgPayoutRange, avgPayoutPriceMargins, avgPayoutDiscountedMargins, avgPayoutCombinedMargins, 'avgPayout')
+        },
+        averageLivePayoutData: {
+          values: avgLivePayoutRange,
+          priceMargins: avgLivePayoutPriceMargins,
+          discountedMargins: avgLivePayoutDiscountedMargins,
+          combinedMargins: avgLivePayoutCombinedMargins,
+          revenue: avgLivePayoutSim.map(p => p.revenueEval),
+          cost: avgLivePayoutSim.map(p => p.cost),
+          netRevenue: avgLivePayoutSim.map(p => p.netRevenue),
+          liveRevenue: avgLivePayoutSim.map(p => p.totalLiveRevenue),
+          combinedRevenue: avgLivePayoutSim.map(p => p.grossCombinedRevenue),
+          netCombinedRevenue: avgLivePayoutSim.map(p => p.netCombinedRevenue),
+          datasets: createDatasets(avgLivePayoutRange, avgLivePayoutPriceMargins, avgLivePayoutDiscountedMargins, avgLivePayoutCombinedMargins, 'avgLivePayout')
+        },
+        evaluationPriceThresholds: evalThresholds,
+        purchaseToPayoutRateThresholds: ptrThresholds,
+        averagePayoutThresholds: avgPayoutThresholds,
+        averageLivePayoutThresholds: avgLivePayoutThresholds
+      };
+    } catch (err) {
+      console.error("Error calculating simulation data:", err);
+      setError("Error calculating simulation data. Check input values.");
+      // Return empty data to prevent crashes
+      const emptyData = { datasets: [] }; // Simplified empty data
+      const emptyThresholds = { priceThreshold: null, discountedThreshold: null };
+      // Adjust return structure
+      return { 
+          evaluationPriceData: emptyData, 
+          purchaseToPayoutRateData: emptyData, 
+          averagePayoutData: emptyData, 
+          evaluationPriceThresholds: emptyThresholds, 
+          purchaseToPayoutRateThresholds: emptyThresholds, 
+          averagePayoutThresholds: emptyThresholds 
+      };
+    }
+  // Update dependencies list
+  }, [evalPriceRange, ptrRange, avgPayoutRange, evalPrice, discountPct, purchaseToPayoutRate, avgPayout, 
+      useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate, visibleMargins]);
+
+  // --- Calculate Exact 50% Threshold Values (for the dedicated tab) --- 
+  const exactThresholds = useMemo(() => {
+    // REMOVE "Discount %" from variables list
+    const variables = ["Eval Price", "Purchase to Payout Rate", "Avg Payout"];
+    return variables.map(varName => {
+      let pmValue: number | null = null;
+      let dpmValue: number | null = null;
+      try {
+        pmValue = find50PercentMarginValue(varName, evalPrice, discountPct / 100, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate);
+      } catch (err) { console.error(`Error finding PM threshold for ${varName}:`, err); }
+      try {
+        dpmValue = find50PercentDiscountedMarginValue(varName, evalPrice, discountPct / 100, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate);
+      } catch (err) { console.error(`Error finding DPM threshold for ${varName}:`, err); }
+      
+      const marginsAtPMValue = pmValue !== null ? calculateMargins(
+        varName === "Eval Price" ? pmValue : evalPrice,
+        varName === "Discount %" ? pmValue : discountPct / 100,
+        varName === "Purchase to Payout Rate" ? pmValue : purchaseToPayoutRate,
+        varName === "Avg Payout" ? pmValue : avgPayout,
+        useActivationFee,
+        activationFee,
+        activationFeeDiscountPct,
+        currentEvalPassRate
+      ) : null;
+
+      const marginsAtDPMValue = dpmValue !== null ? calculateMargins(
+        varName === "Eval Price" ? dpmValue : evalPrice,
+        varName === "Discount %" ? dpmValue : discountPct / 100,
+        varName === "Purchase to Payout Rate" ? dpmValue : purchaseToPayoutRate,
+        varName === "Avg Payout" ? dpmValue : avgPayout,
+        useActivationFee,
+        activationFee,
+        activationFeeDiscountPct,
+        currentEvalPassRate
+      ) : null;
+
+      return {
+        name: varName,
+        pmValue: pmValue, 
+        dpmValue: dpmValue,
+        marginsAtPMValue: marginsAtPMValue, 
+        marginsAtDPMValue: marginsAtDPMValue
+      };
+    });
+  }, [evalPrice, discountPct, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate]);
+
+  // --- Calculate Payout vs Rate combinations for 50% Margins (New) ---
+  const payoutRateCombinations = useMemo(() => {
+    const combinationsPM = [];
+    const combinationsDPM = [];
+    const numSteps = 100; // Number of points to calculate for the plot
+
+    // Define a reasonable range for Purchase to Payout Rate to scan
+    const minRate = 0.001; // Start slightly above 0 to avoid division issues
+    const maxRate = Math.min(1.0, (purchaseToPayoutRate || 0.01) * 15); // Up to 15x base or 100%
+
+    const getPMMarginForPayout = (rate: number) => (payout: number) => 
+        calculateMargins(evalPrice, discountPct / 100, rate, payout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).priceMargin;
+    const getDPMMarginForPayout = (rate: number) => (payout: number) => 
+        calculateMargins(evalPrice, discountPct / 100, rate, payout, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate).discountedPriceMargin;
+
+    for (let i = 0; i < numSteps; i++) {
+      const currentRate = minRate + (maxRate - minRate) * i / (numSteps - 1);
+      
+      let payoutFor50PM: number | null = null;
+      let payoutFor50DPM: number | null = null;
+
+      try {
+          // Pass activation fee state to findThresholdValue
+          payoutFor50PM = findThresholdValue(
+              "Avg Payout", 
+              getPMMarginForPayout(currentRate), 
+              0.5, 
+              evalPrice, 
+              discountPct / 100, 
+              currentRate, // Pass the currentRate being iterated
+              avgPayout, // Base avgPayout is used for initial range in findThresholdValue
+              useActivationFee,
+              activationFee,
+              activationFeeDiscountPct,
+              currentEvalPassRate
+          );
+      } catch (err) { console.error(`Error finding PM payout for rate ${currentRate}:`, err); }
+      
+      try {
+           // Pass activation fee state to findThresholdValue
+          payoutFor50DPM = findThresholdValue(
+              "Avg Payout", 
+              getDPMMarginForPayout(currentRate), 
+              0.5, 
+              evalPrice, 
+              discountPct / 100, 
+              currentRate, // Pass the currentRate being iterated
+              avgPayout, // Base avgPayout is used for initial range in findThresholdValue
+              useActivationFee,
+              activationFee,
+              activationFeeDiscountPct,
+              currentEvalPassRate
+          );
+      } catch (err) { console.error(`Error finding DPM payout for rate ${currentRate}:`, err); }
+
+      if (payoutFor50PM !== null) {
+        // FIX: Remove payout > 500 filter for now to see full curve
+        // if (payoutFor50PM > 500) {
+            combinationsPM.push({ x: currentRate, y: payoutFor50PM });
+        // }
+      }
+      if (payoutFor50DPM !== null) {
+         // FIX: Remove payout > 500 filter for now to see full curve
+         // if (payoutFor50DPM > 500) {
+            combinationsDPM.push({ x: currentRate, y: payoutFor50DPM });
+        // }
+      }
+    }
+    return { combinationsPM, combinationsDPM };
+  }, [evalPrice, discountPct, avgPayout, purchaseToPayoutRate, useActivationFee, activationFee, activationFeeDiscountPct, currentEvalPassRate]);
+
+  // --- Calculate Eval Price vs Rate combinations for 50% Margins (New) ---
+  const evalPriceRateCombinations = useMemo(() => {
+    const results: Array<{evalPrice: number, dataPoints: Array<{x: number, y: number}>}> = [];
+    const numRates = 100; // Steps for rates
+    const numEvalPrices = 5; // Number of different eval prices to simulate
+    
+    // Define ranges
+    const minRate = 0.001;
+    const maxRate = Math.min(1.0, (purchaseToPayoutRate || 0.01) * 15);
+    
+    // Generate eval price steps from 50% of current eval price to 150%
+    const evalPriceSteps = Array.from({ length: numEvalPrices }, (_, i) => 
+      evalPrice * (0.5 + i * 0.25)); // From 50% to 150% of current eval price
+    
+    // For each eval price, calculate a curve
+    evalPriceSteps.forEach(currentEvalPrice => {
+      const dataPoints = [];
+      
+      const getPMMarginForPayout = (rate: number) => (payout: number) => 
+        calculateMargins(currentEvalPrice, discountPct / 100, rate, payout, 
+                        useActivationFee, activationFee, activationFeeDiscountPct, 
+                        currentEvalPassRate).priceMargin;
+      
+      // For each rate, find the payout that gives exactly 50% margin at this eval price
+      for (let i = 0; i < numRates; i++) {
+        const currentRate = minRate + (maxRate - minRate) * i / (numRates - 1);
+        
+        try {
+          const payoutFor50PM = findThresholdValue(
+            "Avg Payout", 
+            getPMMarginForPayout(currentRate), 
+            0.5, 
+            currentEvalPrice, // Use the current eval price in the loop
+            discountPct / 100, 
+            currentRate,
+            avgPayout,
+            useActivationFee,
+            activationFee,
+            activationFeeDiscountPct,
+            currentEvalPassRate
+          );
+          
+          if (payoutFor50PM !== null) {
+            dataPoints.push({ x: currentRate, y: payoutFor50PM });
+          }
+        } catch (err) { 
+          console.error(`Error finding payout for rate ${currentRate} at eval price ${currentEvalPrice}:`, err); 
+        }
+      }
+      
+      // Add this curve to the results
+      results.push({
+        evalPrice: currentEvalPrice,
+        dataPoints: dataPoints
+      });
+    });
+    
+    return results;
+  }, [evalPrice, discountPct, avgPayout, purchaseToPayoutRate, useActivationFee, 
+      activationFee, activationFeeDiscountPct, currentEvalPassRate]);
+
+  // --- Chart Data for Eval Price vs Rate --- 
+  const evalPriceRateChartData = useMemo(() => ({
+    datasets: [
+      // Create a dataset for each eval price curve with different colors
+      ...evalPriceRateCombinations.map((combination, index) => {
+        // Generate colors from a palette
+        const hue = 200 + (index * 30) % 360; // Spread colors
+        const color = `hsl(${hue}, 70%, 60%)`;
+        
+        return {
+          label: `Eval Price: $${combination.evalPrice.toFixed(0)}`,
+          data: combination.dataPoints,
+          borderColor: color,
+          backgroundColor: `hsla(${hue}, 70%, 60%, 0.2)`,
+          showLine: true,
+          tension: 0.1,
+          pointRadius: 0,
+          fill: false,
+          borderWidth: 2
+        };
+      }),
+      // Add current position marker
+      {
+        label: 'Current Settings',
+        data: [{ x: purchaseToPayoutRate, y: avgPayout }],
+        borderColor: '#FF6384',
+        backgroundColor: '#FF6384',
+        pointRadius: 6,
+        pointHoverRadius: 8,
+        showLine: false
+      }
+    ]
+  }), [evalPriceRateCombinations, purchaseToPayoutRate, avgPayout]);
+
+  // Chart options for Eval Price vs Rate
+  const evalPriceRateChartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { 
+        position: 'top' as const,
+        labels: { color: '#FAFAFA' }
+      },
+      tooltip: {
+        enabled: true,
+        mode: 'index' as const,
+        intersect: false,
+        callbacks: {
+          title: (tooltipItems: any[]) => `Rate: ${(tooltipItems[0].parsed.x * 100).toFixed(2)}%`,
+          label: (tooltipItem: any) => {
+            if (tooltipItem.dataset.label === 'Current Settings') {
+              return `Current: ${(purchaseToPayoutRate * 100).toFixed(2)}% rate, $${avgPayout.toFixed(2)} payout`;
+            }
+            return `${tooltipItem.dataset.label}: $${tooltipItem.parsed.y.toFixed(2)} Avg Payout`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        type: 'linear' as const,
+        title: { display: true, text: 'Purchase to Payout Rate', color: '#FAFAFA' },
+        ticks: { color: '#FAFAFA', callback: (val: number | string) => `${(Number(val) * 100).toFixed(1)}%` },
+        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+      },
+      y: {
+        type: 'linear' as const,
+        title: { display: true, text: 'Average Payout ($)', color: '#FAFAFA' },
+        ticks: { color: '#FAFAFA', callback: (val: number | string) => `$${Number(val).toFixed(0)}` },
+        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+      }
+    }
+  }), [purchaseToPayoutRate, avgPayout]);
+
+  // --- Chart Data and Options for Payout vs Rate Combinations (New) --- 
+  const payoutRateChartData = useMemo(() => ({
+    datasets: [
+      {
+        label: '50% Price Margin Combinations',
+        data: payoutRateCombinations.combinationsPM,
+        borderColor: '#F2CB80',
+        // Conditionally set fill/background based on visibility
+        backgroundColor: visibleMargins.payoutRate.priceMargin ? 'rgba(242, 203, 128, 0.3)' : 'transparent', 
+        showLine: true,
+        tension: 0.1,
+        pointRadius: 0, // Hide points for the line itself
+        fill: visibleMargins.payoutRate.priceMargin ? 'end' : false, // Fill only if Price Margin is visible
+        order: 2, // Draw fill below other lines/points
+        hidden: !visibleMargins.payoutRate.priceMargin // Hide based on specific chart state
+      },
+      {
+        label: '50% Discounted Margin Combinations',
+        data: payoutRateCombinations.combinationsDPM,
+        borderColor: '#A3C1FA',
+         // Conditionally set fill/background based on visibility
+        backgroundColor: visibleMargins.payoutRate.discountedMargin ? 'rgba(163, 193, 250, 0.3)' : 'transparent', 
+        showLine: true,
+        tension: 0.1,
+        pointRadius: 0, // Hide points for the line itself
+        fill: visibleMargins.payoutRate.discountedMargin ? 'end' : false, // Fill only if Discounted Margin is visible
+        order: 1, // Draw DPM line/fill potentially over PM fill if both were visible
+        hidden: !visibleMargins.payoutRate.discountedMargin // Hide based on specific chart state
+      },
+      {
+        label: 'Current Inputs',
+        data: [{ x: purchaseToPayoutRate, y: avgPayout }],
+        borderColor: '#FF6384', // Example: Red border
+        backgroundColor: '#FF6384', // Example: Red fill
+        pointRadius: 6,
+        pointHoverRadius: 8,
+        showLine: false, // Display as a single point
+        order: 0 // Draw point on top
+      }
+    ]
+  }), [payoutRateCombinations, purchaseToPayoutRate, avgPayout, visibleMargins]);
+
+  const payoutRateChartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { 
+        position: 'top' as const, 
+        labels: { color: '#FAFAFA' },
+        // Disable legend item clicking
+        onClick: () => {} // Do nothing when legend items are clicked
+      },
+      tooltip: {
+        enabled: true, 
+        mode: 'index' as const, 
+        intersect: false,
+        callbacks: {
+           title: (tooltipItems: any[]) => `Rate: ${(tooltipItems[0].parsed.x * 100).toFixed(2)}%`,
+           label: (tooltipItem: any) => 
+              `${tooltipItem.dataset.label}: $${tooltipItem.parsed.y.toFixed(2)} Avg Payout`
+        }
+      }
+    },
+    scales: {
+      x: { // Purchase to Payout Rate
+        type: 'linear' as const,
+        title: { display: true, text: 'Purchase to Payout Rate', color: '#FAFAFA' },
+        ticks: { 
+            color: '#FAFAFA', 
+            callback: (value: number | string) => `${(Number(value) * 100).toFixed(1)}%` 
+        },
+        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+      },
+      y: { // Avg Payout
+        type: 'linear' as const,
+        title: { display: true, text: 'Average Payout ($)', color: '#FAFAFA' },
+        ticks: { 
+            color: '#FAFAFA', 
+            callback: (value: number | string) => `$${Number(value).toFixed(0)}` 
+        },
+        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+      }
+    }
+  }), []);
+
+  // Function to create chart options with dynamic vertical lines 
+  const createChartOptions = (
+    title: string, // Add title for axis label
+    axisType: 'linear' | 'category', 
+    priceThreshold: number | null, 
+    discountedThreshold: number | null, 
+    showDiscountedMargin: boolean, // Pass state to determine active threshold
+    valueFormatter: (val: number) => string, // For ticks and tooltips
+    labelFormatter: (val: number) => string // For annotation labels specifically
+  ) => {
+    const annotations: any = {}; // Start with empty annotations
+
+    // Horizontal 50% line
+    annotations.line1 = {
+      type: 'line',
+      yMin: 0.5,
+      yMax: 0.5,
+      borderColor: '#F2CB80', 
+      borderWidth: 2,
+      borderDash: [6, 6],
+      label: {
+        content: '50% Threshold',
+        enabled: true,
+        position: 'end',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        color: '#F2CB80'
+      }
+    };
+
+    // Vertical line for Price Margin threshold
+    if (priceThreshold !== null) {
+      const thresholdLabel = labelFormatter(priceThreshold);
+      annotations.priceLine = {
+        type: 'line',
+        // Use raw numeric value for linear scale, formatted label for category (though category isn't used now)
+        xMin: axisType === 'linear' ? priceThreshold : thresholdLabel,
+        xMax: axisType === 'linear' ? priceThreshold : thresholdLabel,
+        borderColor: '#FF6384', 
+        borderWidth: 1,
+        borderDash: [4, 4],
+        label: {
+          content: `PM < 50% at ${thresholdLabel}`,
+          enabled: true,
+          position: 'start',
+          yAdjust: -15,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          color: '#FF6384'
+        }
+      };
+    }
+    
+    // Vertical line for Discounted Margin threshold
+    if (discountedThreshold !== null) {
+        const thresholdLabel = labelFormatter(discountedThreshold);
+        // Use raw numeric value for linear scale
+        const thresholdValue = axisType === 'linear' ? discountedThreshold : thresholdLabel;
+        // Use raw numeric price threshold for comparison if linear
+        const priceThresholdValue = axisType === 'linear' ? priceThreshold : labelFormatter(priceThreshold ?? NaN);
+        
+        // Check if thresholds are effectively the same
+        // FIX: Ensure both thresholds are numbers before comparing for linear axis
+        const isSameAsPriceThreshold = 
+            priceThreshold !== null && 
+            discountedThreshold !== null &&
+            axisType === 'linear' 
+                ? Math.abs(discountedThreshold - priceThreshold) < 1e-9 // Use tolerance for float comparison if linear
+                : thresholdLabel === labelFormatter(priceThreshold ?? NaN); // Original category comparison
+
+        if (!isSameAsPriceThreshold) {
+             annotations.discountedLine = {
+                type: 'line',
+                xMin: thresholdValue,
+                xMax: thresholdValue,
+                borderColor: '#FF9F40', 
+                borderWidth: 1,
+                borderDash: [4, 4],
+                label: {
+                    content: `DM < 50% at ${thresholdLabel}`,
+                     enabled: true,
+                     position: 'start',
+                     yAdjust: 5, 
+                     backgroundColor: 'rgba(0,0,0,0.6)',
+                     color: '#FF9F40'
+                }
+             };
+        } else if (annotations.priceLine) { 
+            annotations.priceLine.label.content = `Both < 50% at ${thresholdLabel}`;
+            annotations.priceLine.label.yAdjust = 0;
+        }
+    }
+
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 0 },
+      plugins: {
+        legend: {
+          position: 'top' as const,
+          labels: { color: '#FAFAFA' },
+          // Disable legend item clicking
+          onClick: () => {} // Do nothing when legend items are clicked
+        },
+        tooltip: {
+          enabled: true,
+          mode: 'index' as const,
+          intersect: false,
+          // Add callback for linear scale tooltips
+          callbacks: {
+              title: (tooltipItems: any[]) => {
+                  if (axisType === 'linear' && tooltipItems.length > 0) {
+                      // Use the formatted numeric value from the first item's parsed data
+                      return `${title}: ${valueFormatter(tooltipItems[0].parsed.x)}`;
+                  }
+                  // Fallback or for category scale (though not used)
+                  return tooltipItems[0]?.label ?? ''; 
+              },
+              label: (tooltipItem: any) => {
+                   // Display margin as percentage
+                   return `${tooltipItem.dataset.label}: ${(tooltipItem.parsed.y * 100).toFixed(2)}%`;
+               }
+          }
+        },
+        annotation: { annotations }
+      },
+      scales: {
+        y: {
+          beginAtZero: true, // Set minimum to 0
+          // min: 0,
+          max: 1.1, // Set max slightly above 1
+          title: {
+            display: true,
+            text: 'Margin (%)',
+            color: '#FAFAFA'
+          },
+          ticks: { 
+            color: '#FAFAFA',
+            callback: function(value: number | string) {
+              return (Number(value) * 100).toFixed(0) + '%'; // Format as percentage
+            }
+          }, 
+          grid: { color: 'rgba(255, 255, 255, 0.1)' }
+        },
+        x: {
+          type: axisType, // Use passed axis type
+          title: {
+            display: true,
+            text: title, // Use passed title
+            color: '#FAFAFA'
+          },
+          ticks: { 
+            color: '#FAFAFA',
+            // Use valueFormatter for tick labels on linear scale
+            callback: axisType === 'linear' ? (value: number | string) => valueFormatter(Number(value)) : undefined
+          },
+          grid: { color: 'rgba(255, 255, 255, 0.1)' }
+        }
+      }
+    };
+  };
+
+  // Generate specific options for each chart - UPDATE calls
+  const evalPriceOptions = useMemo(() => {
+      const options = createChartOptions(
+          'Eval Price ($)', // Title
+          'linear', // Axis Type
+          evaluationPriceThresholds.priceThreshold, 
+          evaluationPriceThresholds.discountedThreshold, 
+          visibleMargins.evalPrice.priceMargin, // Pass state
+          val => `$${val.toFixed(2)}`, // Value Formatter (Ticks/Tooltip)
+          val => `$${val.toFixed(2)}` // Label Formatter (Annotations)
+      );
+      // Apply reverse specifically for this linear scale
+      if (options.scales?.x && options.scales.x.type === 'linear') {
+          // Use type assertion via unknown
+          ((options.scales.x as unknown) as import('chart.js').LinearScaleOptions).reverse = true;
+      }
+      return options;
+  // Add visibleMargins dependency
+  }, [evaluationPriceThresholds, visibleMargins]);
+
+  const ptrOptions = useMemo(() => createChartOptions(
+      'Purchase to Payout Rate (%)', // Title
+      'linear', // Axis Type
+      purchaseToPayoutRateThresholds.priceThreshold, 
+      purchaseToPayoutRateThresholds.discountedThreshold, 
+      visibleMargins.ptrRate.priceMargin, // Pass state
+      val => `${(val * 100).toFixed(2)}%`, // Value Formatter
+      val => `${(val * 100).toFixed(2)}%` // Label Formatter
+  // Add visibleMargins dependency
+  ), [purchaseToPayoutRateThresholds, visibleMargins]);
+
+  const avgPayoutOptions = useMemo(() => createChartOptions(
+      'Average Payout ($)', // Title
+      'linear', // Axis Type
+      averagePayoutThresholds.priceThreshold, 
+      averagePayoutThresholds.discountedThreshold, 
+      visibleMargins.avgPayout.priceMargin, // Pass state
+      val => `$${val.toFixed(2)}`, // Value Formatter
+      val => `$${val.toFixed(2)}` // Label Formatter
+  // Add visibleMargins dependency
+  ), [averagePayoutThresholds, visibleMargins]);
+
+  // Download function - Update to handle new data format for linear scales
+  const downloadSimulationData = (data: { datasets: { label: string, data: {x: number, y: number}[], hidden?: boolean }[] }, variableName: string, filename: string, valueFormatter: (val: number) => string) => {
+    if (!data || !data.datasets || data.datasets.length < 2 || !data.datasets[0].data || !data.datasets[1].data) {
+      console.error("Invalid data format for download:", data);
+      setError("Cannot download data: Invalid format.");
+      return;
+    }
+    // Find the visible dataset
+    const visibleDataset = data.datasets.find(ds => !ds.hidden);
+    if (!visibleDataset) {
+        setError("Cannot download data: No visible dataset found.");
+        return;
+    }
+    
+    // Use the label of the visible dataset
+    const headers = [variableName, visibleDataset.label];
+    
+    // Map data from the visible dataset
+    const rows = visibleDataset.data.map((point) => [
+      valueFormatter(point.x), // Format the x value
+      point.y?.toFixed(4) ?? 'N/A' // Margin y value from visible dataset
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    saveAs(blob, filename);
+  };
+
+  // Helper to format threshold text
+  const formatThresholdText = (threshold: number | null, formatter: (val: number) => string) => {
+      return threshold !== null ? formatter(threshold) : 'N/A (Stays above 50% in range)';
+  };
+
+  // Helper function to format value for display
+  const formatValue = (varName: string, value: number | null): string => {
+    if (value === null) return 'N/A';
+    if (varName === "Eval Price" || varName === "Avg Payout") {
+      return `$${value.toFixed(2)}`;
+    } else { // Discount % or Payout Rate
+      return `${(value * 100).toFixed(2)}%`;
+    }
+  };
+
+  // Helper to format currency
+  const formatCurrency = (value: number) => value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+  // List of simulation titles (consistent source) - REMOVE Discount %
+  const simulationTitles = [
+    "Evaluation Price", 
+    "Purchase to Payout Rate", 
+    "Average Payout", 
+    "Average Live Payout",
+    "Payout vs Rate @ 50%",
+    "Eval Price vs Rate @ 50%", 
+    "Exact Thresholds"
+  ];
+
+  // Add common title component for all chart tabs with checkboxes
+  function ChartTitle({ 
+    title, 
+    chartKey 
+  }: { 
+    title: string; 
+    chartKey: keyof typeof visibleMargins;
+  }) {
+    
+    return (
+      <div className="flex flex-col space-y-1 mb-3">
+        <h3 className="text-base md:text-lg font-semibold text-text_primary">{title}</h3>
+        <div className="flex items-center space-x-4 mt-1">
+          {/* Price Margin Checkbox */}
+          <div className="flex items-center">
+            <input 
+              type="checkbox" 
+              id={`${chartKey}-priceMargin`}
+              checked={visibleMargins[chartKey].priceMargin} 
+              onChange={() => toggleMargin(chartKey, 'priceMargin')}
+              className="h-3.5 w-3.5 rounded border-gray-600 focus:ring-0 bg-card"
+              style={{ accentColor: '#488BF8' }}
+            />
+            <label 
+              htmlFor={`${chartKey}-priceMargin`} 
+              className={`ml-1.5 text-sm ${visibleMargins[chartKey].priceMargin ? 'text-[#488BF8] font-medium' : 'text-gray-400'}`}
+            >
+              Price Margin
+            </label>
+          </div>
+          
+          {/* Discounted Margin Checkbox */}
+          <div className="flex items-center">
+            <input 
+              type="checkbox" 
+              id={`${chartKey}-discountedMargin`}
+              checked={visibleMargins[chartKey].discountedMargin} 
+              onChange={() => toggleMargin(chartKey, 'discountedMargin')}
+              className="h-3.5 w-3.5 rounded border-gray-600 focus:ring-0 bg-card"
+              style={{ accentColor: '#A3C1FA' }}
+            />
+            <label 
+              htmlFor={`${chartKey}-discountedMargin`} 
+              className={`ml-1.5 text-sm ${visibleMargins[chartKey].discountedMargin ? 'text-[#A3C1FA] font-medium' : 'text-gray-400'}`}
+            >
+              Discounted Margin
+            </label>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Helper Function to Render Simulation Content (to avoid repetition) - ADJUST INDICES
+  const renderSimulationContent = (index: number) => {
+    // Check if we have an error to show
+    if (error) {
+      return (
+        <div className="text-red-400 bg-red-900/20 p-4 rounded-lg border border-red-800">
+          <h3 className="font-semibold mb-2">Calculation Error</h3>
+          <p>{error}</p>
+        </div>
+      );
+    }
+
+    switch (index) {
+      case 0: // Evaluation Price (Index 0)
+        return (
+          <div className="bg-surface pt-4">
+            {/* Use the updated ChartTitle component */}
+            <ChartTitle title="Evaluation Price Simulation" chartKey="evalPrice" />
+            <div className="h-96 relative">
+               {/* Ensure Line component handles {x,y} data */}
+              <Line data={{datasets: evaluationPriceData.datasets}} options={evalPriceOptions as any} />
+            </div>
+            <div className="mt-4 text-sm text-gray-400">
+              <p>Price Margin falls below 50% at: {formatThresholdText(evaluationPriceThresholds.priceThreshold, val => `$${val.toFixed(2)}`)}</p>
+              <p>Discounted Margin falls below 50% at: {formatThresholdText(evaluationPriceThresholds.discountedThreshold, val => `$${val.toFixed(2)}`)}</p>
+            </div>
+            {/* Add download button for Eval Price simulation data */}
+            <button onClick={() => downloadSimulationData({datasets: evaluationPriceData.datasets}, 'Evaluation Price ($)', 'eval_price_simulation.csv', val => `$${val.toFixed(2)}`)} className="mt-4 px-4 py-2 bg-secondary text-background rounded hover:bg-opacity-80 flex items-center gap-2 text-sm font-medium"><Download className="w-4 h-4"/> Download Data</button>
+          </div>
+        );
+      case 1: // Purchase to Payout Rate (Index 1)
+        return (
+          <div className="bg-surface pt-4">
+            {/* Use the updated ChartTitle component */}
+            <ChartTitle title="Purchase to Payout Rate Simulation" chartKey="ptrRate" />
+            <div className="h-96 relative">
+              {/* Ensure Line component handles {x,y} data */}
+              <Line data={{datasets: purchaseToPayoutRateData.datasets}} options={ptrOptions as any} />
+            </div>
+            <div className="mt-4 text-sm text-gray-400">
+              <p>Price Margin falls below 50% at: {formatThresholdText(purchaseToPayoutRateThresholds.priceThreshold, val => `${(val * 100).toFixed(2)}%`)}</p>
+              <p>Discounted Margin falls below 50% at: {formatThresholdText(purchaseToPayoutRateThresholds.discountedThreshold, val => `${(val * 100).toFixed(2)}%`)}</p>
+            </div>
+            {/* Add download button for PTR simulation data */}
+            <button onClick={() => downloadSimulationData({datasets: purchaseToPayoutRateData.datasets}, 'Purchase to Payout Rate (%)', 'ptr_simulation.csv', val => `${(val * 100).toFixed(2)}%`)} className="mt-4 px-4 py-2 bg-secondary text-background rounded hover:bg-opacity-80 flex items-center gap-2 text-sm font-medium"><Download className="w-4 h-4"/> Download Data</button>
+          </div>
+        );
+      case 2: // Average Payout (Index 2) 
+        return (
+          <div className="bg-surface pt-4">
+            {/* Use the updated ChartTitle component */}
+            <ChartTitle title="Average Payout Simulation" chartKey="avgPayout" />
+            <div className="h-96 relative">
+               {/* Ensure Line component handles {x,y} data */}
+              <Line data={{datasets: averagePayoutData.datasets}} options={avgPayoutOptions as any} />
+            </div>
+            <div className="mt-4 text-sm text-gray-400">
+              <p>Price Margin falls below 50% at: {formatThresholdText(averagePayoutThresholds.priceThreshold, val => `$${val.toFixed(2)}`)}</p>
+              <p>Discounted Margin falls below 50% at: {formatThresholdText(averagePayoutThresholds.discountedThreshold, val => `$${val.toFixed(2)}`)}</p>
+            </div>
+            {/* Add download button for Avg Payout simulation data */}
+            <button onClick={() => downloadSimulationData({datasets: averagePayoutData.datasets}, 'Average Payout ($)', 'avg_payout_simulation.csv', val => `$${val.toFixed(2)}`)} className="mt-4 px-4 py-2 bg-secondary text-background rounded hover:bg-opacity-80 flex items-center gap-2 text-sm font-medium"><Download className="w-4 h-4"/> Download Data</button>
+          </div>
+        );
+      case 3: // Average Live Payout (Index 3)
+        return (
+          <div className="bg-surface pt-4">
+            {/* Use the updated ChartTitle component */}
+            <ChartTitle title="Average Live Payout Simulation" chartKey="avgLivePayout" />
+            <div className="h-96 relative">
+               {/* Ensure Line component handles {x,y} data */}
+              <Line data={{datasets: averageLivePayoutData?.datasets || []}} options={avgPayoutOptions as any} />
+            </div>
+            <div className="mt-4 text-sm text-gray-400">
+              <p>Price Margin falls below 50% at: {formatThresholdText(averageLivePayoutThresholds?.priceThreshold || null, val => `$${val.toFixed(2)}`)}</p>
+              <p>Discounted Margin falls below 50% at: {formatThresholdText(averageLivePayoutThresholds?.discountedThreshold || null, val => `$${val.toFixed(2)}`)}</p>
+              <p>Combined Margin falls below 50% at: {formatThresholdText(averageLivePayoutThresholds?.combinedThreshold || null, val => `$${val.toFixed(2)}`)}</p>
+            </div>
+             {/* Update download call */}
+            <button onClick={() => downloadSimulationData({datasets: averageLivePayoutData?.datasets || []}, 'Average Live Payout ($)', 'avg_live_payout_simulation.csv', val => `$${val.toFixed(2)}`)} className="mt-4 px-4 py-2 bg-secondary text-background rounded hover:bg-opacity-80 flex items-center gap-2 text-sm font-medium"><Download className="w-4 h-4"/> Download Data</button>
+          </div>
+        );
+      case 4: // Payout vs Rate @ 50% (Index 4)
+        return (
+          <div className="bg-surface pt-4">
+            <h3 className="text-base md:text-lg font-semibold mb-3 text-text_primary">Payout vs Rate @ 50% Margin</h3>
+            <div className="h-96 relative">
+              <Line data={payoutRateChartData} options={payoutRateChartOptions as any} />
+            </div>
+            <div className="mt-4 text-sm text-text_secondary leading-relaxed">
+              <div className="bg-card p-4 rounded-lg shadow-inner mb-4">
+                <p className="mb-3">
+                  <span className="font-medium text-primary">Insights:</span> This chart shows the combinations of Purchase-to-Payout Rate and Average Payout amounts that yield exactly 50% Price Margin.
+                </p>
+                
+                <p>
+                  <span className="font-medium text-primary">Risk Assessment:</span> As the rate increases beyond 
+                  {payoutRateCombinations.combinationsPM.length > 10 ? 
+                    ` ${(payoutRateCombinations.combinationsPM[Math.floor(payoutRateCombinations.combinationsPM.length * 0.5)].x * 100).toFixed(1)}%` : 
+                    " the midpoint of the curve"}, 
+                  the required payout amount increases exponentially, making the business model increasingly sensitive to small changes in success rates.
+                </p>
+              </div>
+            </div>
+            {/* Add download button for Payout vs Rate simulation data */}
+            <button 
+              onClick={() => downloadSimulationData(payoutRateChartData, 'Purchase to Payout Rate (%)', 'payout_vs_rate_simulation.csv', val => `${(val * 100).toFixed(2)}%`)} 
+              className="mt-4 px-4 py-2 bg-secondary text-background rounded hover:bg-opacity-80 flex items-center gap-2 text-sm font-medium"
+            >
+              <Download className="w-4 h-4"/> Download Data
+            </button>
+          </div>
+        );
+      case 5: // Eval Price vs Rate @ 50% (Index 5 - was 6)
+        return (
+          <div className="bg-surface pt-4">
+            <h3 className="text-base md:text-lg font-semibold mb-3 text-text_primary">Eval Price vs Rate @ 50% Margin</h3>
+            <div className="h-96 relative">
+              <Line data={evalPriceRateChartData} options={evalPriceRateChartOptions as any} />
+            </div>
+            <div className="mt-4 text-sm text-text_secondary leading-relaxed">
+              <div className="bg-card p-4 rounded-lg shadow-inner mb-4">
+                <p className="mb-3">
+                  <span className="font-medium text-primary">Insights:</span> This chart shows how the relationship between Purchase-to-Payout Rate and 
+                  Average Payout changes at different evaluation price points, while maintaining exactly 50% Price Margin.
+                </p>
+                
+                <p>
+                  <span className="font-medium text-primary">Takeaway:</span> Higher evaluation prices allow for higher payout amounts at any 
+                  given rate. The spread between price lines widens as the purchase-to-payout rate increases, showing where pricing has the most impact.
+                </p>
+              </div>
+            </div>
+            
+            <button 
+              onClick={() => downloadSimulationData(evalPriceRateChartData, 'Purchase to Payout Rate (%)', 
+                                                  'eval_price_vs_rate_simulation.csv', 
+                                                  val => `${(val * 100).toFixed(2)}%`)} 
+              className="mt-4 px-4 py-2 bg-secondary text-background rounded hover:bg-opacity-80 flex items-center gap-2 text-sm font-medium"
+            >
+              <Download className="w-4 h-4"/> Download Data
+            </button>
+          </div>
+        );
+      case 6: // Exact Thresholds (Index 6 - was 5)
+        return (
+          <div className="bg-surface pt-4">
+            <h3 className="text-base md:text-lg font-semibold mb-3 text-text_primary">Exact 50% Margin Threshold Values</h3>
+            {/* Price Margin Table */}
+            <h4 className="text-sm font-semibold mb-3 text-secondary">Price Margin Threshold (50%)</h4>
+            <p className="text-sm text-gray-400 mb-4">Approximate value for each variable (adjusted individually) resulting in a <span className="font-semibold">Price Margin</span> of 50%.</p>
+            
+            <div className="overflow-x-auto mb-8">
+              <table className="min-w-full bg-card border border-gray-700 rounded-md">
+                <thead>
+                  <tr className="border-b border-gray-700 text-left text-xs font-medium">
+                    <th className="px-4 py-2 text-secondary">Variable</th>
+                    <th className="px-4 py-2 text-secondary">Current Value</th>
+                    <th className="px-4 py-2 text-secondary">50% Threshold</th>
+                    <th className="px-4 py-2 text-secondary">Change Needed</th>
+                  </tr>
+                </thead>
+                <tbody className="text-sm">
+                  {Object.entries(exactThresholds.price).map(([key, value]) => (
+                    <tr key={key} className="border-b border-gray-700 hover:bg-gray-800/50">
+                      <td className="px-4 py-2 font-medium">{key}</td>
+                      <td className="px-4 py-2">{formatValue(key, value.currentValue)}</td>
+                      <td className="px-4 py-2">{formatValue(key, value.threshold)}</td>
+                      <td className={`px-4 py-2 ${value.changePercent === null ? 'text-gray-400' : Math.abs(value.changePercent) > 50 ? 'text-red-400' : 'text-green-400'}`}>
+                        {value.changeText}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Discounted Price Margin Table */}
+            <h4 className="text-sm font-semibold mb-3 text-secondary">Discounted Price Margin Threshold (50%)</h4>
+            <p className="text-sm text-gray-400 mb-4">Approximate value for each variable (adjusted individually) resulting in a <span className="font-semibold">Discounted Price Margin</span> of 50%.</p>
+            
+            <div className="overflow-x-auto mb-8">
+              <table className="min-w-full bg-card border border-gray-700 rounded-md">
+                <thead>
+                  <tr className="border-b border-gray-700 text-left text-xs font-medium">
+                    <th className="px-4 py-2 text-secondary">Variable</th>
+                    <th className="px-4 py-2 text-secondary">Current Value</th>
+                    <th className="px-4 py-2 text-secondary">50% Threshold</th>
+                    <th className="px-4 py-2 text-secondary">Change Needed</th>
+                  </tr>
+                </thead>
+                <tbody className="text-sm">
+                  {Object.entries(exactThresholds.discounted).map(([key, value]) => (
+                    <tr key={key} className="border-b border-gray-700 hover:bg-gray-800/50">
+                      <td className="px-4 py-2 font-medium">{key}</td>
+                      <td className="px-4 py-2">{formatValue(key, value.currentValue)}</td>
+                      <td className="px-4 py-2">{formatValue(key, value.threshold)}</td>
+                      <td className={`px-4 py-2 ${value.changePercent === null ? 'text-gray-400' : Math.abs(value.changePercent) > 50 ? 'text-red-400' : 'text-green-400'}`}>
+                        {value.changeText}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Combined Margin Table - Only shown if includeLive is true */}
+            {includeLive && (
+              <>
+                <h4 className="text-sm font-semibold mb-3 text-secondary">Combined Margin Threshold (50%)</h4>
+                <p className="text-sm text-gray-400 mb-4">Approximate value for each variable (adjusted individually) resulting in a <span className="font-semibold">Combined Margin</span> of 50%.</p>
+                
+                <div className="overflow-x-auto mb-8">
+                  <table className="min-w-full bg-card border border-gray-700 rounded-md">
+                    <thead>
+                      <tr className="border-b border-gray-700 text-left text-xs font-medium">
+                        <th className="px-4 py-2 text-secondary">Variable</th>
+                        <th className="px-4 py-2 text-secondary">Current Value</th>
+                        <th className="px-4 py-2 text-secondary">50% Threshold</th>
+                        <th className="px-4 py-2 text-secondary">Change Needed</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm">
+                      {Object.entries(exactThresholds.combined || {}).map(([key, value]) => (
+                        <tr key={key} className="border-b border-gray-700 hover:bg-gray-800/50">
+                          <td className="px-4 py-2 font-medium">{key}</td>
+                          <td className="px-4 py-2">{formatValue(key, value.currentValue)}</td>
+                          <td className="px-4 py-2">{formatValue(key, value.threshold)}</td>
+                          <td className={`px-4 py-2 ${value.changePercent === null ? 'text-gray-400' : Math.abs(value.changePercent) > 50 ? 'text-red-400' : 'text-green-400'}`}>
+                            {value.changeText}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#0E1117]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#488BF8] mx-auto"></div>
+          <p className="mt-4 text-gray-300">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#0E1117]">
+        <div className="text-center text-red-400 bg-[#262730] p-6 rounded-lg shadow-lg">
+          <p className="font-semibold">Error:</p>
+          <p className="mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-4 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+          >
+            Reload Application
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background text-text_primary px-3 py-4 md:px-5 md:py-6 font-sans flex flex-col">
+      {/* Header - Use new Icon */}
+      <header className="w-full max-w-screen-2xl mx-auto mb-5 md:mb-6 flex items-center justify-between">
+          {/* Hamburger Menu Button (Visible on small screens) */} 
+          <button 
+             onClick={() => setIsSidebarOpen(true)}
+             className="lg:hidden p-2 text-text_secondary hover:text-text_primary transition-colors" 
+             aria-label="Open parameters menu"
+           >
+            <Menu className="w-6 h-6" />
+          </button>
+
+          {/* Title section - Centered */} 
+          <div className="flex flex-col items-center flex-grow text-center px-4">
+             <h1 className="text-xl md:text-2xl font-bold text-primary mb-0.5 flex items-center gap-2">
+               {/* Replace Calculator icon with img tag */}
+               <img 
+                 src="https://myfundedfutures.com/images/mffu/brandicon.svg"
+                 alt="Brand Icon" 
+                 className="w-7 h-7 md:w-8 md:h-8"
+                 onError={(e) => { e.currentTarget.style.display = 'none'; }} // Hide if image fails
+               />
+              Margin Simulator
+            </h1>
+            <p className="text-text_secondary text-xs md:text-sm max-w-md">
+              Simulate profit margins by adjusting key variables and account size.
+            </p>
+          </div>
+          {/* Spacer to balance the menu button */} 
+           <div className="w-10 lg:hidden"></div> 
+      </header>
+
+      {/* Main Layout Container */} 
+      <div className="flex flex-1 max-w-screen-2xl w-full mx-auto overflow-hidden">
+         {/* Sidebar / Input Controls - Responsive & Collapsible */} 
+         {/* Overlay for mobile sidebar */} 
+         {isSidebarOpen && (
+            <div 
+                onClick={() => setIsSidebarOpen(false)}
+                className="fixed inset-0 bg-black/60 z-30 lg:hidden transition-opacity duration-300"
+                aria-hidden="true"
+            ></div>
+         )}
+
+         <aside 
+            className={`
+              fixed inset-y-0 left-0 z-40 
+              w-72 md:w-80 lg:w-[300px] xl:w-[340px] 
+              bg-surface p-4 md:p-5 shadow-xl h-screen overflow-y-auto 
+              transition-transform duration-300 ease-in-out 
+              transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
+              lg:static lg:translate-x-0 lg:h-auto lg:overflow-y-visible lg:flex-shrink-0 lg:rounded-lg lg:shadow-lg lg:sticky lg:top-5
+            `}
+          >
+             {/* Close button for mobile sidebar */} 
+             <button 
+                 onClick={() => setIsSidebarOpen(false)} 
+                 className="absolute top-2 right-2 lg:hidden p-1 text-text_secondary hover:text-text_primary"
+                 aria-label="Close parameters menu"
+             >
+                <X className="w-5 h-5" />
+             </button>
+          
+            <h2 className="text-lg md:text-xl font-semibold text-secondary mb-4 md:mb-5 flex items-center gap-2 pt-6 lg:pt-0">
+               <Settings className="w-5 h-5 md:w-6 md:h-6"/> Input Parameters
+            </h2>
+            
+             {/* Input sections with slightly adjusted spacing */}
+             <div className="space-y-3">
+                 {/* Account Size & Eval Price Override */} 
+                 <div className="mb-2">
+                     <label htmlFor="accountSize" className="block text-xs font-medium text-text_secondary mb-1">
+                      Account Size
+                    </label>
+                    <select
+                      id="accountSize"
+                      value={accountSize}
+                      onChange={(e) => setAccountSize(e.target.value as AccountSizeKey)}
+                      className="w-full px-3 py-1.5 bg-card border border-gray-600 rounded-md shadow-sm focus:outline-none focus:bg-gray-700 hover:bg-gray-700 focus:border-gray-500 text-text_primary text-sm transition-colors duration-150 appearance-none bg-no-repeat bg-right pr-8" 
+                      style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`}} // Custom arrow
+                    >
+                       {Object.keys(ACCOUNT_SIZES).map(size => (
+                        <option key={size} value={size}>{size.toUpperCase()}</option>
+                      ))}
+                    </select>
+                 </div>
+                 <div className="mb-1">
+                     <label htmlFor="overrideEvalPrice" className="block text-xs font-medium text-text_secondary mb-1">
+                       Eval Price Override <span className="text-xs">(Optional)</span>
+                    </label>
+                    <input
+                      type="number"
+                      id="overrideEvalPrice"
+                      placeholder={`Default: $${ACCOUNT_SIZES[accountSize].evalPrice.toFixed(2)}`}
+                      value={overrideEvalPriceInput}
+                      onChange={(e) => setOverrideEvalPriceInput(e.target.value)} 
+                      min="0"
+                      step="1"
+                       // Updated input styles
+                      className="w-full px-3 py-1.5 bg-card border border-gray-600 rounded-md shadow-sm focus:outline-none focus:bg-gray-700 hover:bg-gray-700 focus:border-gray-500 text-text_primary placeholder-gray-500 text-sm transition-colors duration-150"
+                    />
+                 </div>
+                 
+                 {/* Eval Price Discount */}
+                 <div className="mb-1">
+                   <InputField label="Eval Price Discount" id="discountPct" value={discountPct} onChange={setDiscountPct} min={0} max={100} step={1} unit="%" />
+                 </div>
+             </div>
+             <div className="border-b border-card pb-3">
+                 {/* Activation Fee Section - Styles inherited via InputField */}
+                 <div className="flex items-center mb-2 mt-4">
+                     <input
+                        type="checkbox"
+                        id="useActivationFee"
+                        checked={useActivationFee}
+                        onChange={(e) => setUseActivationFee(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-gray-600 text-primary focus:ring-primary bg-card"/>
+                    <label htmlFor="useActivationFee" className="ml-2 block text-xs font-medium text-text_secondary">
+                      Use Activation Fee?
+                    </label>
+                 </div>
+                 {useActivationFee && (
+                    <div className="space-y-2">
+                      <InputField 
+                        label="Activation Fee Amount" 
+                        id="activationFee" 
+                        value={activationFee} 
+                        onChange={setActivationFee} 
+                        min={0} step={1} unit="$" 
+                      />
+                      <InputField 
+                        label="Activation Fee Discount" 
+                        id="activationFeeDiscountPct" 
+                        value={activationFeeDiscountPct} 
+                        onChange={setActivationFeeDiscountPct} 
+                        min={0} max={100} step={1} unit="%" 
+                      />
+                    </div>
+                 )}
+             </div>
+             <div className="space-y-2">
+                 <InputField label="Eval Pass Rate" id="evalPassRate" value={evalPassRate} onChange={setEvalPassRate} min={0} max={100} step={0.01} unit="%" />
+                 <InputField label="Sim Funded to Payout Rate" id="simFundedRate" value={simFundedRate} onChange={setSimFundedRate} min={0} max={100} step={0.01} unit="%" />
+                 <InputField label="Avg. Payout Amount" id="avgPayout" value={typeof avgPayoutInput === 'string' ? parseFloat(avgPayoutInput) : avgPayoutInput} onChange={(value) => setAvgPayoutInput(value)} min={0} step={10} unit="$" />
+             </div>
+
+             {/* Live Accounts Section */}
+             <div className="border-t border-card pt-4 mt-4">
+                <h3 className="text-sm font-medium text-secondary mb-3">Live Accounts</h3>
+                <div className="flex items-center mb-3">
+                    <input
+                        type="checkbox"
+                        id="includeLive"
+                        checked={includeLive}
+                        onChange={(e) => setIncludeLive(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-gray-600 text-primary focus:ring-primary bg-card"/>
+                    <label htmlFor="includeLive" className="ml-2 block text-xs font-medium text-text_secondary">
+                        Include Live Revenue
+                    </label>
+                </div>
+                <div className="space-y-2">
+                    <InputField label="Avg. Live Saved" id="avgLiveSaved" value={avgLiveSaved} onChange={setAvgLiveSaved} min={0} step={10} unit="$" />
+                    <InputField label="Avg. Live Payout" id="avgLivePayout" value={avgLivePayout} onChange={setAvgLivePayout} min={0} step={10} unit="$" />
+                </div>
+             </div>
+          </aside>
+
+        {/* Main Content Area */} 
+        <main className="flex-grow min-w-0 lg:ml-5 md:lg:ml-6 overflow-y-auto">
+           {/* Base Calculation Display - Updated Structure & Labels */} 
+           <section className="bg-surface p-4 md:p-5 rounded-lg shadow-lg mb-5 md:mb-6">
+              <h2 className="text-lg md:text-xl font-semibold text-secondary mb-4">Base Calculation Summary</h2>
+              
+              {/* Main metrics cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {/* Price Margin Card */}
+                <div className="bg-card rounded-lg border border-gray-700 overflow-hidden">
+                  <div className="p-3 border-b border-gray-700 flex justify-between items-center">
+                    <h3 className="font-medium text-secondary">Price Margin</h3>
+                    <div className={`text-xl font-bold ${baseMargins.priceMargin < 0.5 ? 'text-red-400' : 'text-green-400'}`}>
+                      {(baseMargins.priceMargin * 100).toFixed(2)}%
+                      {baseMargins.priceMargin < 0.5 && <span className="ml-2 text-xs">⚠️ Below 50%</span>}
+                    </div>
+                  </div>
+                  <div className="p-3">
+                    {/* Visual progress bar */}
+                    <div className="w-full h-3 bg-gray-700 rounded-full mb-3">
+                      <div 
+                        className={`h-3 rounded-full ${baseMargins.priceMargin < 0.5 ? 'bg-red-400' : 'bg-green-400'}`}
+                        style={{ width: `${Math.min(100, baseMargins.priceMargin * 100)}%` }}
+                      ></div>
+                    </div>
+                    
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-text_secondary">Revenue:</span>
+                      <span className="font-medium">${formatCurrency(baseMargins.revenueEval)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-text_secondary">Cost:</span>
+                      <span className="font-medium">-${formatCurrency(baseMargins.cost)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-semibold mt-1 pt-2 border-t border-gray-700">
+                      <span>Net Revenue:</span>
+                      <span>${formatCurrency(baseMargins.netRevenue)}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Discounted Margin Card */}
+                <div className="card-box-shadow bg-card rounded-lg shadow-lg">
+                  <div className="p-3 border-b border-gray-700 flex justify-between items-baseline">
+                    <h3 className="text-base md:text-lg font-semibold text-secondary">Discounted Margin</h3>
+                    <p className="text-lg md:text-xl font-bold">
+                      {(baseMargins.discountedPriceMargin * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="p-3">
+                    {/* Visual progress bar */}
+                    <div className="w-full h-3 bg-gray-700 rounded-full mb-3">
+                      <div 
+                        className={`h-3 rounded-full ${baseMargins.discountedPriceMargin < 0.5 ? 'bg-red-400' : 'bg-green-400'}`}
+                        style={{ width: `${Math.min(100, baseMargins.discountedPriceMargin * 100)}%` }}
+                      ></div>
+                    </div>
+                    
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-text_secondary">Revenue:</span>
+                      <span className="font-medium">${formatCurrency(baseMargins.revenueDiscountedEval)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-text_secondary">Cost:</span>
+                      <span className="font-medium">-${formatCurrency(baseMargins.cost)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-semibold mt-1 pt-2 border-t border-gray-700">
+                      <span>Net Revenue:</span>
+                      <span>${formatCurrency(baseMargins.netDiscountedRevenue)}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Live Revenue Card - Only shown if includeLive is true */}
+                {includeLive && (
+                  <div className="card-box-shadow bg-card rounded-lg shadow-lg">
+                    <div className="p-3 border-b border-gray-700 flex justify-between items-baseline">
+                      <h3 className="text-base md:text-lg font-semibold text-secondary">Live Revenue</h3>
+                      <p className="text-lg md:text-xl font-bold">
+                        ${formatCurrency(baseMargins.totalLiveRevenue)}
+                      </p>
+                    </div>
+                    <div className="p-3">
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="text-text_secondary">Live Users:</span>
+                        <span className="font-medium">{baseMargins.liveUserCount.toFixed(0)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="text-text_secondary">Revenue/User:</span>
+                        <span className="font-medium">${formatCurrency(avgLivePayout * 0.20)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-semibold mt-1 pt-2 border-t border-gray-700">
+                        <span>Total Live Revenue:</span>
+                        <span>${formatCurrency(baseMargins.totalLiveRevenue)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Combined Margin Card - Only shown if includeLive is true */}
+                {includeLive && (
+                  <div className="card-box-shadow bg-card rounded-lg shadow-lg">
+                    <div className="p-3 border-b border-gray-700 flex justify-between items-baseline">
+                      <h3 className="text-base md:text-lg font-semibold text-secondary">Combined Margin</h3>
+                      <p className="text-lg md:text-xl font-bold">
+                        {(baseMargins.combinedMargin * 100).toFixed(1)}%
+                      </p>
+                    </div>
+                    <div className="p-3">
+                      {/* Visual progress bar */}
+                      <div className="w-full h-3 bg-gray-700 rounded-full mb-3">
+                        <div 
+                          className={`h-3 rounded-full ${baseMargins.combinedMargin < 0.5 ? 'bg-red-400' : 'bg-green-400'}`}
+                          style={{ width: `${Math.min(100, baseMargins.combinedMargin * 100)}%` }}
+                        ></div>
+                      </div>
+                      
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="text-text_secondary">Eval Revenue:</span>
+                        <span className="font-medium">${formatCurrency(baseMargins.revenueEval)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="text-text_secondary">Live Revenue:</span>
+                        <span className="font-medium">${formatCurrency(baseMargins.totalLiveRevenue)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="text-text_secondary">Cost:</span>
+                        <span className="font-medium">-${formatCurrency(baseMargins.cost)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-semibold mt-1 pt-2 border-t border-gray-700">
+                        <span>Net Combined Revenue:</span>
+                        <span>${formatCurrency(baseMargins.netCombinedRevenue)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Revenue & Cost Breakdown Section - Margins already shown above */}
+              </div>
+
+              {/* Revenue Breakdown */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {/* Standard Revenue Card */}
+                <div className="bg-card rounded-lg border border-gray-700 p-3">
+                  <h3 className="text-sm font-medium text-secondary mb-3">Revenue Breakdown</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-text_secondary">Eval Revenue:</span>
+                      <span className="font-medium">${formatCurrency(baseMargins.evalRevenueFromEvals)}</span>
+                    </div>
+                    {useActivationFee && (
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-text_secondary">Activation Fee Revenue:</span>
+                        <span className="font-medium">${formatCurrency(baseMargins.activationFeeRevenue)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center text-sm font-semibold pt-1 mt-1 border-t border-gray-700">
+                      <span>Total:</span>
+                      <span>${formatCurrency(baseMargins.revenueEval)}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Discounted Revenue Card */}
+                <div className="bg-card rounded-lg border border-gray-700 p-3">
+                  <h3 className="text-sm font-medium text-secondary mb-3">Discounted Revenue Breakdown</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-text_secondary">Discounted Eval Revenue:</span>
+                      <span className="font-medium">${formatCurrency(baseMargins.discountedEvalRevenueFromEvals)}</span>
+                    </div>
+                    {useActivationFee && (
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-text_secondary">Discounted Activation Fee:</span>
+                        <span className="font-medium">${formatCurrency(baseMargins.discountedActivationFeeRevenue)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center text-sm font-semibold pt-1 mt-1 border-t border-gray-700">
+                      <span>Total:</span>
+                      <span>${formatCurrency(baseMargins.revenueDiscountedEval)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Reference inputs */}
+              <div className="bg-card rounded-lg border border-gray-700 p-3">
+                <h3 className="text-sm font-medium text-secondary mb-3">Key Parameters</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
+                  <div className="text-sm">
+                    <span className="text-text_secondary block">Eval Price:</span>
+                    <span className="font-semibold">${evalPrice.toFixed(2)} {overrideEvalPriceInput && parseFloat(overrideEvalPriceInput) > 0 && <span className="text-xs text-yellow-400">(Override)</span>}</span>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-text_secondary block">Discount:</span>
+                    <span className="font-semibold">{discountPct.toFixed(1)}%</span>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-text_secondary block">Eval Pass Rate:</span>
+                    <span className="font-semibold">{(currentEvalPassRate * 100).toFixed(2)}%</span>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-text_secondary block">Sim Funded Rate:</span>
+                    <span className="font-semibold">{simFundedRate.toFixed(2)}%</span>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-text_secondary block">Purchase to Payout:</span>
+                    <span className="font-semibold">{(purchaseToPayoutRate * 100).toFixed(2)}%</span>
+                  </div>
+                  {useActivationFee && (
+                    <div className="text-sm">
+                      <span className="text-text_secondary block">Activation Fee:</span>
+                      <span className="font-semibold">${activationFee.toFixed(2)} ({activationFeeDiscountPct}% Disc.)</span>
+                    </div>
+                  )}
+                  <div className="text-sm">
+                    <span className="text-text_secondary block">Sample Size:</span>
+                    <span className="font-semibold">{SAMPLE_SIZE.toLocaleString()}</span>
+                  </div>
+                  </div>
+              </div>
+           </section>
+
+          {/* --- Responsive Simulation Display --- */}
+          <div className="bg-surface p-4 md:p-5 rounded-lg shadow-lg">
+            <h2 className="text-lg md:text-xl font-semibold text-secondary mb-4">Simulation Explorer</h2>
+            
+            {/* Category tabs - higher level grouping */}
+            <div className="mb-5 border-b border-gray-700">
+              <div className="flex flex-wrap -mb-px">
+                <button 
+                  onClick={() => setActiveCategory('variables')}
+                  className={`mr-4 py-2 px-1 border-b-2 font-medium text-sm transition-colors ${activeCategory === 'variables' ? 'border-primary text-primary' : 'border-transparent text-text_secondary hover:text-text_primary hover:border-gray-500'}`}
+                >
+                  Variable Simulations
+                </button>
+                <button 
+                  onClick={() => setActiveCategory('relationships')}
+                  className={`mr-4 py-2 px-1 border-b-2 font-medium text-sm transition-colors ${activeCategory === 'relationships' ? 'border-primary text-primary' : 'border-transparent text-text_secondary hover:text-text_primary hover:border-gray-500'}`}
+                >
+                  Relationship Analysis
+                </button>
+                <button 
+                  onClick={() => setActiveCategory('thresholds')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${activeCategory === 'thresholds' ? 'border-primary text-primary' : 'border-transparent text-text_secondary hover:text-text_primary hover:border-gray-500'}`}
+                >
+                  Threshold Values
+                </button>
+              </div>
+          </div>
+
+            {/* Mobile Category Select */}
+            <div className="lg:hidden mb-4">
+              <label htmlFor="mobileCategorySelect" className="block text-xs font-medium text-text_secondary mb-1">
+                Select Category:
+              </label>
+              <select
+                id="mobileCategorySelect"
+                value={activeCategory}
+                onChange={(e) => setActiveCategory(e.target.value)}
+                className="w-full px-3 py-2 bg-card border border-gray-600 rounded-md shadow-sm focus:outline-none focus:bg-gray-700 hover:bg-gray-700 focus:border-gray-500 text-text_primary text-sm transition-colors duration-150 appearance-none bg-no-repeat bg-right pr-8"
+                style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")` }}
+              >
+                <option value="variables">Variable Simulations</option>
+                <option value="relationships">Relationship Analysis</option>
+                <option value="thresholds">Threshold Values</option>
+              </select>
+            </div>
+            
+            {/* Variable Simulations - Card Grid */}
+            {activeCategory === 'variables' && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                {[
+                  { title: "Evaluation Price", description: "How changing the evaluation price affects margins", icon: <DollarSign className="h-5 w-5 text-primary" />, index: 0 },
+                  { title: "Purchase to Payout Rate", description: "Impact of success rate on profitability", icon: <Percent className="h-5 w-5 text-primary" />, index: 1 },
+                  { title: "Average Payout", description: "Effects of payout amounts on margin", icon: <TrendingUp className="h-5 w-5 text-primary" />, index: 2 },
+                  { title: "Average Live Payout", description: "Impact of live payouts on combined margin", icon: <Activity className="h-5 w-5 text-primary" />, index: 3 }
+                ].map((item) => (
+                  <div 
+                    key={item.title}
+                    onClick={() => setActiveTab(item.index)}
+                    className={`bg-card border ${activeTab === item.index ? 'border-primary' : 'border-gray-700'} rounded-lg p-4 cursor-pointer hover:bg-gray-800 transition-colors`}
+                  >
+                    <div className="flex items-center mb-2">
+                      <div className={`p-2 rounded-md ${activeTab === item.index ? 'bg-primary/10' : 'bg-gray-700'} mr-3`}>
+                        {item.icon}
+                      </div>
+                      <h3 className="font-medium">{item.title}</h3>
+                    </div>
+                    <p className="text-xs text-text_secondary">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {/* Relationships - Card Grid */}
+            {activeCategory === 'relationships' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {[
+                  { title: "Payout vs Rate @ 50%", description: "Combinations of payout and rate that yield exactly 50% margin", icon: <LineChart className="h-5 w-5 text-primary" />, index: 4 },
+                  { title: "Eval Price vs Rate @ 50%", description: "How evaluation price affects the payout/rate relationship", icon: <Calculator className="h-5 w-5 text-primary" />, index: 5 }
+                ].map((item) => (
+                  <div 
+                    key={item.title}
+                    onClick={() => setActiveTab(item.index)}
+                    className={`bg-card border ${activeTab === item.index ? 'border-primary' : 'border-gray-700'} rounded-lg p-4 cursor-pointer hover:bg-gray-800 transition-colors`}
+                  >
+                    <div className="flex items-center mb-2">
+                      <div className={`p-2 rounded-md ${activeTab === item.index ? 'bg-primary/10' : 'bg-gray-700'} mr-3`}>
+                        {item.icon}
+                      </div>
+                      <h3 className="font-medium">{item.title}</h3>
+                    </div>
+                    <p className="text-xs text-text_secondary">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {/* Thresholds - Single Card */}
+            {activeCategory === 'thresholds' && (
+              <div 
+                onClick={() => setActiveTab(6)}
+                className={`bg-card border ${activeTab === 6 ? 'border-primary' : 'border-gray-700'} rounded-lg p-4 cursor-pointer hover:bg-gray-800 transition-colors max-w-md mx-auto`}
+              >
+                <div className="flex items-center mb-2">
+                  <div className={`p-2 rounded-md ${activeTab === 6 ? 'bg-primary/10' : 'bg-gray-700'} mr-3`}>
+                    <Calculator className="h-5 w-5 text-primary" />
+                  </div>
+                  <h3 className="font-medium">Exact Threshold Values</h3>
+                </div>
+                <p className="text-xs text-text_secondary">Precise variable values that result in exactly 50% margin</p>
+              </div>
+            )}
+            
+            {/* Active Simulation Content */}
+            <div className="mt-6 pt-5 border-t border-gray-700">
+              {renderSimulationContent(activeTab)}
+            </div>
+          </div>
+          
+          {/* Add some bottom padding/margin */} 
+          <div className="h-6"></div> 
+        </main>
+      </div>
+    </div>
+  );
+}
+
+export default App;
