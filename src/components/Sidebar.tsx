@@ -292,15 +292,16 @@ function Sidebar({
             disabled={isDisabled}
           />
           <InputField 
-            label="Staffing Cost (per account)" 
-            id="staffingCostPerAccount" 
-            value={inputs.staffingCostPerAccount}
-            onChange={(value) => updateInput('staffingCostPerAccount', value)}
+            label="Staffing Fee" 
+            id="staffingFeePercent" 
+            value={inputs.staffingFeePercent}
+            onChange={(value) => updateInput('staffingFeePercent', value)}
             min={0}
+            max={100}
             step={0.01}
-            unit="$"
-            placeholder="Defaults to 3.00"
-            tooltip="Fixed staffing cost per account"
+            unit="%"
+            placeholder="Defaults to 5%"
+            tooltip="Percentage of gross revenue (eval + activation) for staffing"
             disabled={isDisabled}
           />
           <InputField 

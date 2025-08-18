@@ -24,6 +24,7 @@ export interface MarginCalculationResult {
   processorCost: number;
   affiliateCost: number;
   companyCostsTotal: number;
+  // Note: staffing cost moved into percentage and included inside companyCostsTotal
 }
 
 export interface SimulationDataPoint {

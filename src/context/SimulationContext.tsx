@@ -24,7 +24,8 @@ interface SimulationInputs {
   userFeePerAccount: number | string
   dataFeePerAccount: number | string
   accountFeePerAccount: number | string
-  staffingCostPerAccount: number | string
+  // staffing now as percent of gross
+  staffingFeePercent: number | string
   processorFeePercent: number | string
   affiliateFeePercent: number | string
   affiliateAppliesToActivation: boolean
@@ -269,7 +270,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       const userFeePerAccount = inputs.userFeePerAccount === '' ? 5.83 : toNumber(inputs.userFeePerAccount)
       const dataFeePerAccount = inputs.dataFeePerAccount === '' ? 1.467 : toNumber(inputs.dataFeePerAccount)
       const accountFeePerAccount = inputs.accountFeePerAccount === '' ? 3.5 : toNumber(inputs.accountFeePerAccount)
-      const staffingCostPerAccount = inputs.staffingCostPerAccount === '' ? 3 : toNumber(inputs.staffingCostPerAccount)
+      const staffingFeePercent = inputs.staffingFeePercent === '' ? 5 : toNumber(inputs.staffingFeePercent)
       const processorFeePercent = inputs.processorFeePercent === '' ? 5.5 : toNumber(inputs.processorFeePercent)
       const affiliateFeePercent = inputs.affiliateFeePercent === '' ? 9.8 : toNumber(inputs.affiliateFeePercent)
       const affiliateAppliesToActivation = !!inputs.affiliateAppliesToActivation
@@ -302,7 +303,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         userFeePerAccount,
         dataFeePerAccount,
         accountFeePerAccount,
-        staffingCostPerAccount,
+        staffingFeePercent,
         processorFeePercent,
         affiliateFeePercent,
         affiliateAppliesToActivation

@@ -17,7 +17,8 @@ export function calculateMargins(
   userFeePerAccount: number = 5.83,
   dataFeePerAccount: number = 1.467,
   accountFeePerAccount: number = 3.5,
-  staffingCostPerAccount: number = 3,
+  // Staffing cost is now a percentage of pre-live gross revenue
+  staffingFeePercent: number = 5,
   processorFeePercent: number = 5.5,
   affiliateFeePercent: number = 9.8,
   affiliateAppliesToActivation: boolean = false
@@ -75,16 +76,16 @@ export function calculateMargins(
   const fixedCompanyCosts = SAMPLE_SIZE * (
     (isNaN(userFeePerAccount) ? 0 : userFeePerAccount) +
     (isNaN(dataFeePerAccount) ? 0 : dataFeePerAccount) +
-    (isNaN(accountFeePerAccount) ? 0 : accountFeePerAccount) +
-    (isNaN(staffingCostPerAccount) ? 0 : staffingCostPerAccount)
+    (isNaN(accountFeePerAccount) ? 0 : accountFeePerAccount)
   );
 
   // Percentage-based costs from Gross Revenue (Eval + Activation)
   const processorCost = preLiveGrossRevenue * ((isNaN(processorFeePercent) ? 0 : processorFeePercent) / 100);
   const affiliateBase = affiliateAppliesToActivation ? preLiveGrossRevenue : evalRevenueFromEvals;
   const affiliateCost = affiliateBase * ((isNaN(affiliateFeePercent) ? 0 : affiliateFeePercent) / 100);
+  const staffingCost = preLiveGrossRevenue * ((isNaN(staffingFeePercent) ? 0 : staffingFeePercent) / 100);
 
-  const companyCostsTotal = fixedCompanyCosts + processorCost + affiliateCost;
+  const companyCostsTotal = fixedCompanyCosts + processorCost + affiliateCost + staffingCost;
 
   const cost = payoutCost + companyCostsTotal;
   let netRevenue = revenueEval - cost;
