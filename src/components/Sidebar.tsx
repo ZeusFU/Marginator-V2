@@ -204,30 +204,28 @@ function Sidebar({
 
           {/* Right column: Activation + Live */}
           <div className="space-y-6">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-secondary">Activation Fee</h3>
-                <button onClick={() => updateInput('useActivationFee', !inputs.useActivationFee)} className={`px-2 py-1 rounded text-xs ${inputs.useActivationFee ? 'bg-primary text-white' : 'bg-card text-text_secondary'}`}>{inputs.useActivationFee ? 'On' : 'Off'}</button>
+            <ToggleableSection 
+              title="Activation Fee" 
+              isEnabled={inputs.useActivationFee}
+              onToggle={() => updateInput('useActivationFee', !inputs.useActivationFee)}
+              tooltip="Optional fee charged to traders who pass the evaluation"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <InputField label="Activation Fee Amount" id="activationFee" value={inputs.activationFee} onChange={(v) => updateInput('activationFee', v)} min={0} step={10} unit="$" placeholder="Fee charged after passing" tooltip="One-time fee charged to traders who pass the evaluation" disabled={isDisabled} />
               </div>
-              {inputs.useActivationFee && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <InputField label="Activation Fee Amount" id="activationFee" value={inputs.activationFee} onChange={(v) => updateInput('activationFee', v)} min={0} step={10} unit="$" placeholder="Fee charged after passing" tooltip="One-time fee charged to traders who pass the evaluation" disabled={isDisabled} />
-                </div>
-              )}
-            </div>
+            </ToggleableSection>
 
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-secondary">Live Accounts</h3>
-                <button onClick={() => updateInput('includeLive', !inputs.includeLive)} className={`px-2 py-1 rounded text-xs ${inputs.includeLive ? 'bg-primary text-white' : 'bg-card text-text_secondary'}`}>{inputs.includeLive ? 'On' : 'Off'}</button>
+            <ToggleableSection 
+              title="Live Accounts" 
+              isEnabled={inputs.includeLive}
+              onToggle={() => updateInput('includeLive', !inputs.includeLive)}
+              tooltip="Include revenue from live accounts that continue trading after funded phase"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <InputField label="% Live Accounts Saved" id="avgLiveSaved" value={inputs.avgLiveSaved} onChange={(v) => updateInput('avgLiveSaved', v)} min={0} max={100} step={0.1} unit="%" placeholder="% continuing to live phase" tooltip="Percentage of funded accounts that continue to live phase" disabled={isDisabled} />
+                <InputField label="Avg. Live Payout" id="avgLivePayout" value={inputs.avgLivePayout} onChange={(v) => updateInput('avgLivePayout', v)} min={0} step={10} unit="$" placeholder="Average live account payout" tooltip="Average payout for live account traders" disabled={isDisabled} />
               </div>
-              {inputs.includeLive && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <InputField label="% Live Accounts Saved" id="avgLiveSaved" value={inputs.avgLiveSaved} onChange={(v) => updateInput('avgLiveSaved', v)} min={0} max={100} step={0.1} unit="%" placeholder="% continuing to live phase" tooltip="Percentage of funded accounts that continue to live phase" disabled={isDisabled} />
-                  <InputField label="Avg. Live Payout" id="avgLivePayout" value={inputs.avgLivePayout} onChange={(v) => updateInput('avgLivePayout', v)} min={0} step={10} unit="$" placeholder="Average live account payout" tooltip="Average payout for live account traders" disabled={isDisabled} />
-                </div>
-              )}
-            </div>
+            </ToggleableSection>
           </div>
         </div>
       ) : (
