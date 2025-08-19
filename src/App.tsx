@@ -194,15 +194,12 @@ function AppContent() {
       case 'variables':
         return (
           <div className="input-container">
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-              <div className="xl:col-span-2">
-                <Sidebar isSidebarOpen={true} setIsSidebarOpen={() => {}} inline />
-              </div>
-              <div className="bg-card p-6 rounded-lg border border-border flex flex-col justify-between">
-                <div className="text-sm text-text_secondary mb-3">Review your parameters, then run a simulation. The charts will center on your target margin.</div>
+            <div className="grid grid-cols-1 gap-6">
+              <Sidebar isSidebarOpen={true} setIsSidebarOpen={() => {}} inline />
+              <div className="bg-card p-6 rounded-lg border border-border">
                 <button
                   onClick={handleRunSimulation}
-                  className="run-simulation-button w-full mt-2 p-3 bg-primary text-white rounded-md font-medium"
+                  className="run-simulation-button w-full p-3 bg-primary text-white rounded-md font-medium"
                   disabled={isLoading}
                 >
                   {isLoading ? 'Processing...' : 'Run Simulation'}

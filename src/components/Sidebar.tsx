@@ -170,40 +170,38 @@ function Sidebar({
         <Settings className="w-4 h-4 md:w-5 md:h-5"/> Input Parameters
       </h2>
       
-      {/* Two-column layout grouping when inline */}
+      {/* Two-row, two-column layout when inline */}
       {inline ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Left column: Basic + Costs */}
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-sm font-medium text-secondary mb-2">Basic Parameters</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <InputField label="Evaluation Price" id="evalPrice" value={inputs.evalPrice} onChange={(v) => updateInput('evalPrice', v)} min={0} step={1} unit="$" placeholder="Enter challenge price" tooltip="The price charged to traders for evaluation accounts" disabled={isDisabled} />
-                <InputField label="Eval Pass Rate" id="evalPassRate" value={inputs.evalPassRate} onChange={(v) => updateInput('evalPassRate', v)} min={0} max={100} step={0.01} unit="%" placeholder="% of traders who pass" tooltip="Percentage of traders who pass the evaluation stage" disabled={isDisabled} />
-                <InputField label="Sim Funded to Payout Rate" id="simFundedRate" value={inputs.simFundedRate} onChange={(v) => updateInput('simFundedRate', v)} min={0} max={100} step={0.01} unit="%" placeholder="% of funded traders making withdrawals" tooltip="Percentage of funded traders who actually make withdrawals" disabled={isDisabled} />
-                <InputField label="Avg. Payout Amount" id="avgPayout" value={inputs.avgPayout} onChange={(v) => updateInput('avgPayout', v)} min={0} step={10} unit="$" placeholder="Average withdrawal amount" tooltip="Average amount withdrawn by funded traders" disabled={isDisabled} />
-              </div>
+          {/* Row 1 */}
+          <div>
+            <h3 className="text-sm font-medium text-secondary mb-2">Basic Parameters</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <InputField label="Evaluation Price" id="evalPrice" value={inputs.evalPrice} onChange={(v) => updateInput('evalPrice', v)} min={0} step={1} unit="$" placeholder="Enter challenge price" tooltip="The price charged to traders for evaluation accounts" disabled={isDisabled} />
+              <InputField label="Eval Pass Rate" id="evalPassRate" value={inputs.evalPassRate} onChange={(v) => updateInput('evalPassRate', v)} min={0} max={100} step={0.01} unit="%" placeholder="% of traders who pass" tooltip="Percentage of traders who pass the evaluation stage" disabled={isDisabled} />
+              <InputField label="Sim Funded to Payout Rate" id="simFundedRate" value={inputs.simFundedRate} onChange={(v) => updateInput('simFundedRate', v)} min={0} max={100} step={0.01} unit="%" placeholder="% of funded traders making withdrawals" tooltip="Percentage of funded traders who actually make withdrawals" disabled={isDisabled} />
+              <InputField label="Avg. Payout Amount" id="avgPayout" value={inputs.avgPayout} onChange={(v) => updateInput('avgPayout', v)} min={0} step={10} unit="$" placeholder="Average withdrawal amount" tooltip="Average amount withdrawn by funded traders" disabled={isDisabled} />
             </div>
+          </div>
 
-            <div>
-              <h3 className="text-sm font-medium text-secondary mb-2">Company Costs</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <InputField label="User Fee (per account)" id="userFeePerAccount" value={inputs.userFeePerAccount} onChange={(v) => updateInput('userFeePerAccount', v)} min={0} step={0.01} unit="$" placeholder="Defaults to 5.83" tooltip="Fixed cost per account for user support and onboarding" disabled={isDisabled} />
-                <InputField label="Data Fee (per account)" id="dataFeePerAccount" value={inputs.dataFeePerAccount} onChange={(v) => updateInput('dataFeePerAccount', v)} min={0} step={0.001} unit="$" placeholder="Defaults to 1.467" tooltip="Fixed data cost per account" disabled={isDisabled} />
-                <InputField label="Account Fee (per account)" id="accountFeePerAccount" value={inputs.accountFeePerAccount} onChange={(v) => updateInput('accountFeePerAccount', v)} min={0} step={0.01} unit="$" placeholder="Defaults to 3.50" tooltip="Fixed platform/account cost per account" disabled={isDisabled} />
-                <InputField label="Staffing Fee" id="staffingFeePercent" value={inputs.staffingFeePercent} onChange={(v) => updateInput('staffingFeePercent', v)} min={0} max={100} step={0.01} unit="%" placeholder="Defaults to 5%" tooltip="Percentage of gross revenue (eval + activation) for staffing" disabled={isDisabled} />
-                <InputField label="Processor Fee" id="processorFeePercent" value={inputs.processorFeePercent} onChange={(v) => updateInput('processorFeePercent', v)} min={0} max={100} step={0.01} unit="%" placeholder="Defaults to 5.5%" tooltip="Percentage of gross revenue (eval + activation) paid to processors" disabled={isDisabled} />
-                <InputField label="Affiliate Fee" id="affiliateFeePercent" value={inputs.affiliateFeePercent} onChange={(v) => updateInput('affiliateFeePercent', v)} min={0} max={100} step={0.01} unit="%" placeholder="Defaults to 9.8%" tooltip="Percentage applied to eval revenue (and optionally activation) for affiliates" disabled={isDisabled} />
-                <div className="flex items-center justify-between">
-                  <label htmlFor="affiliateAppliesToActivation" className="text-xs font-medium text-text_secondary">Apply Affiliate Fee to Activation Revenue</label>
-                  <button id="affiliateAppliesToActivation" onClick={() => updateInput('affiliateAppliesToActivation', !inputs.affiliateAppliesToActivation)} className={`px-2 py-1 rounded text-xs ${inputs.affiliateAppliesToActivation ? 'bg-primary text-white' : 'bg-card text-text_secondary'}`}>{inputs.affiliateAppliesToActivation ? 'On' : 'Off'}</button>
-                </div>
+          <div>
+            <h3 className="text-sm font-medium text-secondary mb-2">Company Costs</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <InputField label="User Fee (per account)" id="userFeePerAccount" value={inputs.userFeePerAccount} onChange={(v) => updateInput('userFeePerAccount', v)} min={0} step={0.01} unit="$" placeholder="Defaults to 5.83" tooltip="Fixed cost per account for user support and onboarding" disabled={isDisabled} />
+              <InputField label="Data Fee (per account)" id="dataFeePerAccount" value={inputs.dataFeePerAccount} onChange={(v) => updateInput('dataFeePerAccount', v)} min={0} step={0.001} unit="$" placeholder="Defaults to 1.467" tooltip="Fixed data cost per account" disabled={isDisabled} />
+              <InputField label="Account Fee (per account)" id="accountFeePerAccount" value={inputs.accountFeePerAccount} onChange={(v) => updateInput('accountFeePerAccount', v)} min={0} step={0.01} unit="$" placeholder="Defaults to 3.50" tooltip="Fixed platform/account cost per account" disabled={isDisabled} />
+              <InputField label="Staffing Fee" id="staffingFeePercent" value={inputs.staffingFeePercent} onChange={(v) => updateInput('staffingFeePercent', v)} min={0} max={100} step={0.01} unit="%" placeholder="Defaults to 5%" tooltip="Percentage of gross revenue (eval + activation) for staffing" disabled={isDisabled} />
+              <InputField label="Processor Fee" id="processorFeePercent" value={inputs.processorFeePercent} onChange={(v) => updateInput('processorFeePercent', v)} min={0} max={100} step={0.01} unit="%" placeholder="Defaults to 5.5%" tooltip="Percentage of gross revenue (eval + activation) paid to processors" disabled={isDisabled} />
+              <InputField label="Affiliate Fee" id="affiliateFeePercent" value={inputs.affiliateFeePercent} onChange={(v) => updateInput('affiliateFeePercent', v)} min={0} max={100} step={0.01} unit="%" placeholder="Defaults to 9.8%" tooltip="Percentage applied to eval revenue (and optionally activation) for affiliates" disabled={isDisabled} />
+              <div className="flex items-center justify-between">
+                <label htmlFor="affiliateAppliesToActivation" className="text-xs font-medium text-text_secondary">Apply Affiliate Fee to Activation Revenue</label>
+                <button id="affiliateAppliesToActivation" onClick={() => updateInput('affiliateAppliesToActivation', !inputs.affiliateAppliesToActivation)} className={`px-2 py-1 rounded text-xs ${inputs.affiliateAppliesToActivation ? 'bg-primary text-white' : 'bg-card text-text_secondary'}`}>{inputs.affiliateAppliesToActivation ? 'On' : 'Off'}</button>
               </div>
             </div>
           </div>
 
-          {/* Right column: Activation + Live */}
-          <div className="space-y-6">
+          {/* Row 2 */}
+          <div>
             <ToggleableSection 
               title="Activation Fee" 
               isEnabled={inputs.useActivationFee}
@@ -214,7 +212,9 @@ function Sidebar({
                 <InputField label="Activation Fee Amount" id="activationFee" value={inputs.activationFee} onChange={(v) => updateInput('activationFee', v)} min={0} step={10} unit="$" placeholder="Fee charged after passing" tooltip="One-time fee charged to traders who pass the evaluation" disabled={isDisabled} />
               </div>
             </ToggleableSection>
+          </div>
 
+          <div>
             <ToggleableSection 
               title="Live Accounts" 
               isEnabled={inputs.includeLive}
