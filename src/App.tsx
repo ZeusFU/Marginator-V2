@@ -17,11 +17,11 @@ import annotationPlugin from 'chartjs-plugin-annotation'
 import { SimulationProvider, useSimulationContext } from './context/SimulationContext'
 
 // Import components
-import Sidebar from './components/Sidebar'
 import { TabNavigation } from './components/TabNavigation'
 import { ChartTabs } from './components/ChartTabs'
 import { Toast } from './components/Toast'
 import SimulationDashboard, { ScenarioSnapshot } from './components/SimulationDashboard'
+import { InlineParameters as Sidebar } from './components/Sidebar'
 import EvalPriceChart from './charts/EvalPriceChart'
 import PtrChart from './charts/PtrChart'
 import AvgPayoutChart from './charts/AvgPayoutChart'
@@ -228,7 +228,6 @@ function AppContent() {
       case 'charts':
         return (
           <div className="chart-container p-4 bg-card rounded-lg shadow-sm">
-            <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
             {error ? (
               <div className="error-message p-4 bg-red-100 text-red-700 rounded-md">
                 {error}
@@ -241,10 +240,16 @@ function AppContent() {
             ) : results ? (
               <>
                 <SimulationDashboard onSaveScenario={handleScenarioSave} />
-                {renderActiveChart()}
+                <div className="mt-6">
+                  <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                  {renderActiveChart()}
+                </div>
               </>
             ) : (
-              renderActiveChart()
+              <>
+                <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                {renderActiveChart()}
+              </>
             )}
           </div>
         )
