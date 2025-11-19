@@ -18,7 +18,7 @@ export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70,
 
   return (
     <div
-      className="absolute z-40 w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl"
+      className="fixed z-40 w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl"
       style={{ top: position.top, left: position.left }}
     >
       <div className="flex items-center justify-between p-4 border-b border-border">
@@ -178,6 +178,17 @@ export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70,
                 step={0.01}
                 unit="%"
                 placeholder="7.5"
+              />
+              <InputField
+                label="Live Allocation %"
+                id="liveAllocationPercent"
+                value={inputs.liveAllocationPercent}
+                onChange={(v) => updateInput('liveAllocationPercent', v)}
+                min={0}
+                max={100}
+                step={0.01}
+                unit="%"
+                placeholder="4"
               />
             </div>
           )}

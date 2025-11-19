@@ -23,6 +23,7 @@ export interface MarginCalculationResult {
   fixedCompanyCosts: number;
   processorCost: number;
   affiliateCost: number;
+  liveAllocationCost: number;
   companyCostsTotal: number;
   // Note: staffing cost moved into percentage and included inside companyCostsTotal
 }

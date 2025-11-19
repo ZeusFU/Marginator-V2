@@ -29,6 +29,7 @@ interface SimulationInputs {
   staffingFeePercent: number | string
   processorFeePercent: number | string
   affiliateFeePercent: number | string
+  liveAllocationPercent: number | string
   affiliateAppliesToActivation: boolean
 }
 
@@ -193,6 +194,7 @@ const defaultInputs: SimulationInputs = {
   staffingFeePercent: '',
   processorFeePercent: '',
   affiliateFeePercent: '',
+  liveAllocationPercent: '',
   affiliateAppliesToActivation: false
 }
 
@@ -279,6 +281,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       const staffingFeePercent = inputs.staffingFeePercent === '' ? 3.5 : toNumber(inputs.staffingFeePercent)
       const processorFeePercent = inputs.processorFeePercent === '' ? 5.25 : toNumber(inputs.processorFeePercent)
       const affiliateFeePercent = inputs.affiliateFeePercent === '' ? 7.5 : toNumber(inputs.affiliateFeePercent)
+      const liveAllocationPercent = inputs.liveAllocationPercent === '' ? 4 : toNumber(inputs.liveAllocationPercent)
       const affiliateAppliesToActivation = !!inputs.affiliateAppliesToActivation
       
       // Ensure key inputs are valid
@@ -312,6 +315,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         staffingFeePercent,
         processorFeePercent,
         affiliateFeePercent,
+        liveAllocationPercent,
         affiliateAppliesToActivation
       )
       
@@ -390,7 +394,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             value, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
             evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
             userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
           ).priceMargin,
           chartMarginTarget / 100,
           evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
@@ -404,7 +408,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             x, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
             evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
             userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
           ).priceMargin,
           chartMarginTarget / 100,
           60,
@@ -429,6 +433,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             staffingFeePercent,
             processorFeePercent,
             affiliateFeePercent,
+            liveAllocationPercent,
             affiliateAppliesToActivation
           )
           
@@ -453,7 +458,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             evalPriceNum, value, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
             evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
             userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
           ).priceMargin,
           chartMarginTarget / 100,
           evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
@@ -467,7 +472,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             evalPriceNum, v, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
             evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
             userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
           ).priceMargin,
           chartMarginTarget / 100,
           60,
@@ -515,7 +520,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             evalPriceNum, purchaseToPayoutRate, value, inputs.useActivationFee, activationFeeNum,
             evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
             userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
           ).priceMargin,
           chartMarginTarget / 100,
           evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
@@ -529,7 +534,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
             evalPriceNum, purchaseToPayoutRate, p, inputs.useActivationFee, activationFeeNum,
             evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
             userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation
+            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
           ).priceMargin,
           chartMarginTarget / 100,
           60,

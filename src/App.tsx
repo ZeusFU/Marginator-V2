@@ -76,15 +76,18 @@ function AppContent() {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const variablesButtonRef = useRef<HTMLButtonElement>(null)
   useLayoutEffect(() => {
-    if (!isVariablesOpen) return
-    if (chartContainerRef.current && variablesButtonRef.current) {
-      const containerRect = chartContainerRef.current.getBoundingClientRect()
-      const buttonRect = variablesButtonRef.current.getBoundingClientRect()
+    if (!isVariablesOpen || !variablesButtonRef.current) return
+    const updatePosition = () => {
+      const buttonRect = variablesButtonRef.current!.getBoundingClientRect()
+      const maxLeft = Math.max(16, Math.min(window.innerWidth - 360, buttonRect.left - 16))
       setPopoverPosition({
-        top: buttonRect.bottom - containerRect.top + 12,
-        left: Math.max(16, buttonRect.left - containerRect.left)
+        top: buttonRect.bottom + 12,
+        left: maxLeft
       })
     }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    return () => window.removeEventListener('resize', updatePosition)
   }, [isVariablesOpen])
 
   // Helper functions
@@ -270,12 +273,17 @@ function AppContent() {
                 {renderActiveChart()}
               </>
             )}
-            <VariablesPopover
-              isOpen={isVariablesOpen}
-              onClose={() => setIsVariablesOpen(false)}
-              onRun={handleRunSimulation}
-              position={popoverPosition}
-            />
+            {isVariablesOpen && (
+              <>
+                <div className="fixed inset-0 z-30 bg-black/60" onClick={() => setIsVariablesOpen(false)} />
+                <VariablesPopover
+                  isOpen={isVariablesOpen}
+                  onClose={() => setIsVariablesOpen(false)}
+                  onRun={handleRunSimulation}
+                  position={popoverPosition}
+                />
+              </>
+            )}
           </div>
         )
       case 'thresholds':

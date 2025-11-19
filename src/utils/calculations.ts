@@ -21,6 +21,7 @@ export function calculateMargins(
   staffingFeePercent: number = 3.5,
   processorFeePercent: number = 5.25,
   affiliateFeePercent: number = 7.5,
+  liveAllocationPercent: number = 4,
   affiliateAppliesToActivation: boolean = false
 ): MarginCalculationResult {
   // Input validation
@@ -84,8 +85,9 @@ export function calculateMargins(
   const affiliateBase = affiliateAppliesToActivation ? preLiveGrossRevenue : evalRevenueFromEvals;
   const affiliateCost = affiliateBase * ((isNaN(affiliateFeePercent) ? 0 : affiliateFeePercent) / 100);
   const staffingCost = preLiveGrossRevenue * ((isNaN(staffingFeePercent) ? 0 : staffingFeePercent) / 100);
+  const liveAllocationCost = preLiveGrossRevenue * ((isNaN(liveAllocationPercent) ? 0 : liveAllocationPercent) / 100);
 
-  const companyCostsTotal = fixedCompanyCosts + processorCost + affiliateCost + staffingCost;
+  const companyCostsTotal = fixedCompanyCosts + processorCost + affiliateCost + staffingCost + liveAllocationCost;
 
   const cost = payoutCost + companyCostsTotal;
   let netRevenue = revenueEval - cost;
@@ -127,6 +129,7 @@ export function calculateMargins(
     fixedCompanyCosts,
     processorCost,
     affiliateCost,
+    liveAllocationCost,
     companyCostsTotal
   };
 }
@@ -261,16 +264,17 @@ export function find50PercentMarginValue(
   staffingFeePercent: number = 3.5,
   processorFeePercent: number = 5.25,
   affiliateFeePercent: number = 7.5,
+  liveAllocationPercent: number = 4,
   affiliateAppliesToActivation: boolean = false
 ): number | null {
   const getMargin = (value: number) => {
     const currentEvalPassRate = baseEvalPassRate;
         
     switch (varName) {
-      case "Eval Price": return calculateMargins(value, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive, userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent, processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation).priceMargin;
-      case "Purchase to Payout Rate": return calculateMargins(evalPrice, value, avgPayout, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive, userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent, processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation).priceMargin;
-      case "Avg Payout": return calculateMargins(evalPrice, purchaseToPayoutRate, value, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive, userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent, processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation).priceMargin;
-      case "Avg Live Payout": return calculateMargins(evalPrice, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, value, includeLive, userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent, processorFeePercent, affiliateFeePercent, affiliateAppliesToActivation).priceMargin;
+      case "Eval Price": return calculateMargins(value, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive, userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent, processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation).priceMargin;
+      case "Purchase to Payout Rate": return calculateMargins(evalPrice, value, avgPayout, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive, userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent, processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation).priceMargin;
+      case "Avg Payout": return calculateMargins(evalPrice, purchaseToPayoutRate, value, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, avgLivePayout, includeLive, userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent, processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation).priceMargin;
+      case "Avg Live Payout": return calculateMargins(evalPrice, purchaseToPayoutRate, avgPayout, useActivationFee, activationFee, currentEvalPassRate, avgLiveSaved, value, includeLive, userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent, processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation).priceMargin;
       default: return NaN;
     }
   };

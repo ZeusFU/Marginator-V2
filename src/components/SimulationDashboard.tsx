@@ -111,6 +111,7 @@ export function SimulationDashboard({ onSaveScenario }: SimulationDashboardProps
     fixedCompanyCosts: baseMargins?.fixedCompanyCosts ?? 0,
     processorCost: baseMargins?.processorCost ?? 0,
     affiliateCost: baseMargins?.affiliateCost ?? 0,
+    liveAllocationCost: baseMargins?.liveAllocationCost ?? 0,
     companyCostsTotal: baseMargins?.companyCostsTotal ?? 0
   }
   
@@ -357,6 +358,10 @@ export function SimulationDashboard({ onSaveScenario }: SimulationDashboardProps
           <div className="flex justify-between">
             <span className="text-xs">Affiliate Fees</span>
             <span className="font-medium">{formatCurrency(safeMargin.affiliateCost)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-xs">Live Allocation</span>
+            <span className="font-medium">{formatCurrency(safeMargin.liveAllocationCost)}</span>
           </div>
           <div className="flex justify-between border-t border-border pt-2">
             <span className="text-xs">Total Company Costs</span>

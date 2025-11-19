@@ -54,6 +54,7 @@ function ContourTab() {
       staffingFeePercent: toNum(inputs.staffingFeePercent, 3.5),
       processorFeePercent: toNum(inputs.processorFeePercent, 5.25),
       affiliateFeePercent: toNum(inputs.affiliateFeePercent, 7.5),
+      liveAllocationPercent: toNum(inputs.liveAllocationPercent, 4),
       affiliateAppliesToActivation: !!inputs.affiliateAppliesToActivation
     }
   }, [inputs])
@@ -135,6 +136,7 @@ function ContourTab() {
           calcParams.staffingFeePercent,
           calcParams.processorFeePercent,
           calcParams.affiliateFeePercent,
+          calcParams.liveAllocationPercent,
           calcParams.affiliateAppliesToActivation
         )
         return result.priceMargin * 100

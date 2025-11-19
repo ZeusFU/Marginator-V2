@@ -54,6 +54,7 @@ export default function AssistantDrawer(props: AssistantDrawerProps) {
       staffingFeePercent: toNum(inputs.staffingFeePercent, 3.5),
       processorFeePercent: toNum(inputs.processorFeePercent, 5.25),
       affiliateFeePercent: toNum(inputs.affiliateFeePercent, 7.5),
+      liveAllocationPercent: toNum(inputs.liveAllocationPercent, 4),
       affiliateAppliesToActivation: !!inputs.affiliateAppliesToActivation
     }
   }, [inputs])
@@ -79,6 +80,7 @@ export default function AssistantDrawer(props: AssistantDrawerProps) {
       parsedInputs.staffingFeePercent,
       parsedInputs.processorFeePercent,
       parsedInputs.affiliateFeePercent,
+      parsedInputs.liveAllocationPercent,
       parsedInputs.affiliateAppliesToActivation
     )
     return `Current margin ${formatPercent(res.priceMargin)} | Gross ${res.grossRevenue.toFixed(2)} | Cost ${res.cost.toFixed(2)} | Net ${res.netRevenue.toFixed(2)}`

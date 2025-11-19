@@ -17,6 +17,7 @@ export interface EngineParams {
   staffingFeePercent: number
   processorFeePercent: number
   affiliateFeePercent: number
+  liveAllocationPercent: number
   affiliateAppliesToActivation: boolean
 }
 
@@ -42,6 +43,7 @@ export function buildEngine(params: EngineParams) {
         params.staffingFeePercent,
         params.processorFeePercent,
         params.affiliateFeePercent,
+        params.liveAllocationPercent,
         params.affiliateAppliesToActivation
       ).priceMargin
     })
