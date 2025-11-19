@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Settings, DollarSign, Percent, Users, ChevronDown, ChevronUp } from 'lucide-react'
+import { DollarSign, Percent, Users, ChevronDown, ChevronUp } from 'lucide-react'
 import { useSimulationContext } from '../context/SimulationContext'
 import InputField from './InputField'
 
@@ -7,11 +7,11 @@ interface VariablesPopoverProps {
   isOpen: boolean
   onClose: () => void
   onRun: () => void
-  position?: { top: number; left: number }
+  position?: { top: number; left: number; caret?: number }
   popoverRef: React.RefObject<HTMLDivElement>
 }
 
-export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70, left: 16 }, popoverRef }: VariablesPopoverProps) {
+export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70, left: 16, caret: 32 }, popoverRef }: VariablesPopoverProps) {
   const { inputs, updateInput, isLoading } = useSimulationContext()
   const [showCompanyCosts, setShowCompanyCosts] = useState(false)
 
@@ -23,27 +23,19 @@ export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70,
       className="absolute z-40 w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl"
       style={{ top: position.top, left: position.left }}
     >
-      <div className="absolute -top-2 left-12 w-4 h-4 bg-card border-l border-t border-border rotate-45" />
-      <div className="flex items-center justify-between p-4 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center text-primary">
-            <Settings className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-text_primary">Input Parameters</h3>
-            <p className="text-xs text-text_secondary">Adjust key variables to simulate margins</p>
-          </div>
-        </div>
-        <button
-          aria-label="Close variables"
-          onClick={onClose}
-          className="text-text_secondary hover:text-text_primary text-lg"
-        >
-          &times;
-        </button>
-      </div>
+      <div
+        className="absolute -top-2 w-4 h-4 bg-card border-l border-t border-border rotate-45"
+        style={{ left: Math.max(16, Math.min((position.caret ?? 32), 320)) }}
+      />
+      <button
+        aria-label="Close variables"
+        onClick={onClose}
+        className="absolute top-3 right-3 text-text_secondary hover:text-text_primary text-lg"
+      >
+        &times;
+      </button>
 
-      <div className="p-4 space-y-4">
+      <div className="p-4 pt-6 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <InputField
             label="Eval Price"
@@ -105,6 +97,47 @@ export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70,
             Live Accounts
           </button>
         </div>
+
+        {inputs.useActivationFee && (
+          <div className="grid grid-cols-2 gap-4">
+            <InputField
+              label="Activation Fee Amount"
+              id="activationFee"
+              value={inputs.activationFee}
+              onChange={(v) => updateInput('activationFee', v)}
+              min={0}
+              step={10}
+              unit="$"
+              placeholder="200"
+            />
+          </div>
+        )}
+
+        {inputs.includeLive && (
+          <div className="grid grid-cols-2 gap-4">
+            <InputField
+              label="% Live Accounts Saved"
+              id="avgLiveSaved"
+              value={inputs.avgLiveSaved}
+              onChange={(v) => updateInput('avgLiveSaved', v)}
+              min={0}
+              max={100}
+              step={0.1}
+              unit="%"
+              placeholder="10"
+            />
+            <InputField
+              label="Avg Live Payout"
+              id="avgLivePayout"
+              value={inputs.avgLivePayout}
+              onChange={(v) => updateInput('avgLivePayout', v)}
+              min={0}
+              step={10}
+              unit="$"
+              placeholder="1000"
+            />
+          </div>
+        )}
 
         <div>
           <button

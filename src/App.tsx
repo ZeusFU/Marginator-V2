@@ -72,23 +72,27 @@ function AppContent() {
   })
   const [savedScenarios, setSavedScenarios] = useState<Array<ScenarioSnapshot & { id: string; createdAt: number }>>([])
   const [isVariablesOpen, setIsVariablesOpen] = useState(false)
-  const [popoverPosition, setPopoverPosition] = useState({ top: 70, left: 16 })
+  const [popoverPosition, setPopoverPosition] = useState({ top: 70, left: 16, caret: 40 })
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const variablesButtonRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
-    if (!isVariablesOpen || !chartContainerRef.current || !variablesButtonRef.current) return
+    if (!isVariablesOpen || !variablesButtonRef.current) return
     const updatePosition = () => {
-      const containerRect = chartContainerRef.current!.getBoundingClientRect()
+      if (!chartContainerRef.current) return
+      const containerRect = chartContainerRef.current.getBoundingClientRect()
       const buttonRect = variablesButtonRef.current!.getBoundingClientRect()
-      const width = 340
-      const leftRelative = buttonRect.left - containerRect.left + buttonRect.width / 2 - width / 2
-      const clampedLeft = Math.min(
-        Math.max(16, leftRelative),
+      const width = 360
+      const buttonLeftWithin = buttonRect.left - containerRect.left
+      const desiredLeft = buttonLeftWithin - 12
+      const left = Math.min(
+        Math.max(16, desiredLeft),
         containerRect.width - width - 16
       )
-      const top = buttonRect.bottom - containerRect.top + 12
-      setPopoverPosition({ top, left: clampedLeft })
+      const top = buttonRect.bottom - containerRect.top + 10
+      const caretRaw = buttonLeftWithin + buttonRect.width / 2 - left - 6
+      const caret = Math.min(Math.max(18, caretRaw), width - 18)
+      setPopoverPosition({ top, left, caret })
     }
     updatePosition()
     window.addEventListener('resize', updatePosition)
@@ -263,33 +267,33 @@ function AppContent() {
               </div>
             ) : results ? (
               <>
-                <div className="flex flex-wrap items-center gap-3 mb-4">
-                  <button
-                    ref={variablesButtonRef}
-                    onClick={() => setIsVariablesOpen(!isVariablesOpen)}
-                    aria-label="Adjust variables"
-                    className={`w-11 h-11 rounded-2xl border shadow-sm flex items-center justify-center ${isVariablesOpen ? 'bg-primary text-white border-primary' : 'bg-surface text-primary border-border hover:bg-surface/80'}`}
-                  >
-                    <SettingsIcon className="w-5 h-5" />
-                  </button>
+                <button
+                  ref={variablesButtonRef}
+                  onClick={() => setIsVariablesOpen(!isVariablesOpen)}
+                  aria-label="Adjust variables"
+                  className={`absolute top-4 w-11 h-11 rounded-2xl border shadow-sm flex items-center justify-center ${isVariablesOpen ? 'bg-primary text-white border-primary' : 'bg-surface text-primary border-border hover:bg-surface/80'}`}
+                  style={{ left: '-3.5rem' }}
+                >
+                  <SettingsIcon className="w-5 h-5" />
+                </button>
+                <SimulationDashboard onSaveScenario={handleScenarioSave} />
+                <div className="mt-6 mb-4">
                   <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
                 </div>
-                <SimulationDashboard onSaveScenario={handleScenarioSave} />
-                <div className="mt-6">
-                  {renderActiveChart()}
-                </div>
+                {renderActiveChart()}
               </>
             ) : (
               <>
-                <div className="flex flex-wrap items-center gap-3 mb-4">
-                  <button
-                    ref={variablesButtonRef}
-                    onClick={() => setIsVariablesOpen(!isVariablesOpen)}
-                    aria-label="Adjust variables"
-                    className={`w-11 h-11 rounded-2xl border shadow-sm flex items-center justify-center ${isVariablesOpen ? 'bg-primary text-white border-primary' : 'bg-surface text-primary border-border hover:bg-surface/80'}`}
-                  >
-                    <SettingsIcon className="w-5 h-5" />
-                  </button>
+                <button
+                  ref={variablesButtonRef}
+                  onClick={() => setIsVariablesOpen(!isVariablesOpen)}
+                  aria-label="Adjust variables"
+                  className={`absolute top-4 w-11 h-11 rounded-2xl border shadow-sm flex items-center justify-center ${isVariablesOpen ? 'bg-primary text-white border-primary' : 'bg-surface text-primary border-border hover:bg-surface/80'}`}
+                  style={{ left: '-3.5rem' }}
+                >
+                  <SettingsIcon className="w-5 h-5" />
+                </button>
+                <div className="mb-4">
                   <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
                 </div>
                 {renderActiveChart()}
