@@ -274,11 +274,11 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       const avgLiveSavedNum = toNumber(inputs.avgLiveSaved)
       const avgLivePayoutNum = toNumber(inputs.avgLivePayout)
       const userFeePerAccount = inputs.userFeePerAccount === '' ? 5.83 : toNumber(inputs.userFeePerAccount)
-      const dataFeePerAccount = inputs.dataFeePerAccount === '' ? 1.467 : toNumber(inputs.dataFeePerAccount)
+      const dataFeePerAccount = inputs.dataFeePerAccount === '' ? 2.073 : toNumber(inputs.dataFeePerAccount)
       const accountFeePerAccount = inputs.accountFeePerAccount === '' ? 3.5 : toNumber(inputs.accountFeePerAccount)
-      const staffingFeePercent = inputs.staffingFeePercent === '' ? 5 : toNumber(inputs.staffingFeePercent)
-      const processorFeePercent = inputs.processorFeePercent === '' ? 5.5 : toNumber(inputs.processorFeePercent)
-      const affiliateFeePercent = inputs.affiliateFeePercent === '' ? 9.8 : toNumber(inputs.affiliateFeePercent)
+      const staffingFeePercent = inputs.staffingFeePercent === '' ? 3.5 : toNumber(inputs.staffingFeePercent)
+      const processorFeePercent = inputs.processorFeePercent === '' ? 5.25 : toNumber(inputs.processorFeePercent)
+      const affiliateFeePercent = inputs.affiliateFeePercent === '' ? 7.5 : toNumber(inputs.affiliateFeePercent)
       const affiliateAppliesToActivation = !!inputs.affiliateAppliesToActivation
       
       // Ensure key inputs are valid

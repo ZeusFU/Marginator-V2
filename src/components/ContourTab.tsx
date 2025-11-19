@@ -49,11 +49,11 @@ function ContourTab() {
       avgLivePayout: 0,
       includeLive: false,
       userFeePerAccount: toNum(inputs.userFeePerAccount, 5.83),
-      dataFeePerAccount: toNum(inputs.dataFeePerAccount, 1.467),
+      dataFeePerAccount: toNum(inputs.dataFeePerAccount, 2.073),
       accountFeePerAccount: toNum(inputs.accountFeePerAccount, 3.5),
-      staffingFeePercent: toNum(inputs.staffingFeePercent, 5),
-      processorFeePercent: toNum(inputs.processorFeePercent, 5.5),
-      affiliateFeePercent: toNum(inputs.affiliateFeePercent, 9.8),
+      staffingFeePercent: toNum(inputs.staffingFeePercent, 3.5),
+      processorFeePercent: toNum(inputs.processorFeePercent, 5.25),
+      affiliateFeePercent: toNum(inputs.affiliateFeePercent, 7.5),
       affiliateAppliesToActivation: !!inputs.affiliateAppliesToActivation
     }
   }, [inputs])

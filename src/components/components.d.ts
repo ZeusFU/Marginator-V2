@@ -2,8 +2,6 @@
 
 declare module './TabNavigation' {
   export interface TabNavigationProps {
-    activeTab: number;
-    setActiveTab: (index: number) => void;
     activeCategory: string;
     setActiveCategory: (category: string) => void;
   }

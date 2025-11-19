@@ -19,8 +19,9 @@ import { SimulationProvider, useSimulationContext } from './context/SimulationCo
 // Import components
 import Sidebar from './components/Sidebar'
 import { TabNavigation } from './components/TabNavigation'
+import { ChartTabs } from './components/ChartTabs'
 import { Toast } from './components/Toast'
-import SimulationDashboard from './components/SimulationDashboard'
+import SimulationDashboard, { ScenarioSnapshot } from './components/SimulationDashboard'
 import EvalPriceChart from './charts/EvalPriceChart'
 import PtrChart from './charts/PtrChart'
 import AvgPayoutChart from './charts/AvgPayoutChart'
@@ -68,11 +69,27 @@ function AppContent() {
     message: '', 
     type: 'success'
   })
+  const [savedScenarios, setSavedScenarios] = useState<Array<ScenarioSnapshot & { id: string; createdAt: number }>>([])
 
   // Helper functions
   const displayToast = (message: string, type: 'success' | 'error' = 'success') => {
     setShowToast({ visible: true, message, type })
   }
+  const handleScenarioSave = (snapshot: ScenarioSnapshot) => {
+    setSavedScenarios(prev => [
+      ...prev,
+      { ...snapshot, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, createdAt: Date.now() }
+    ])
+    displayToast('Scenario saved for comparison')
+  }
+
+  const handleRemoveScenario = (id: string) => {
+    setSavedScenarios(prev => prev.filter(item => item.id !== id))
+  }
+
+  const formatCurrencyDisplay = (value: number) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+  const formatPercentDisplay = (value: number) => `${value.toFixed(2)}%`
+
 
   const handleCloseToast = () => {
     setShowToast(prev => ({ ...prev, visible: false }))
@@ -220,11 +237,14 @@ function AppContent() {
                 <div className="spinner"></div>
                 <span className="ml-2">Processing simulation...</span>
               </div>
-            ) : (
+            ) : results ? (
               <>
-                {results && <SimulationDashboard />}
+                <SimulationDashboard onSaveScenario={handleScenarioSave} />
+                <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
                 {renderActiveChart()}
               </>
+            ) : (
+              renderActiveChart()
             )}
           </div>
         )
@@ -233,7 +253,7 @@ function AppContent() {
           <div className="thresholds-container p-4 bg-card rounded-lg shadow-sm">
             {results ? (
               <>
-                <SimulationDashboard />
+                <SimulationDashboard onSaveScenario={handleScenarioSave} />
                 <ThresholdsTable 
                   thresholds={results.exactThresholds}
                   evalPrice={inputs.evalPrice}
@@ -253,6 +273,64 @@ function AppContent() {
         return (
           <div className="p-4 bg-card rounded-lg shadow-sm">
             <ContourTab />
+          </div>
+        )
+      case 'compare':
+        return (
+          <div className="p-4 bg-card rounded-lg shadow-sm">
+            {savedScenarios.length === 0 ? (
+              <div className="text-center text-text_secondary py-10">
+                Save scenarios from the Charts tab to compare them here.
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-4">
+                {savedScenarios.map(scenario => (
+                  <div
+                    key={scenario.id}
+                    className="flex-1 min-w-[260px] rounded-lg border border-border bg-background/80 p-4 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-text_primary">{scenario.name}</h3>
+                        <p className="text-xs text-text_secondary">
+                          Saved {new Date(scenario.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveScenario(scenario.id)}
+                        className="text-xs text-red-500 hover:text-red-400"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="mb-4">
+                      <span className="text-xs uppercase tracking-wide text-text_secondary">Margin</span>
+                      <div className="text-3xl font-bold text-primary">
+                        {formatPercentDisplay(scenario.margin * 100)}
+                      </div>
+                    </div>
+                    <div className="mb-4">
+                      <span className="text-xs uppercase tracking-wide text-text_secondary">Price</span>
+                      <div className="text-xl font-semibold">{formatCurrencyDisplay(scenario.price)}</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-xs text-text_secondary block">Pass Rate</span>
+                        <span className="font-medium">{formatPercentDisplay(scenario.passRate)}</span>
+                      </div>
+                      <div>
+                        <span className="text-xs text-text_secondary block">Payout Rate</span>
+                        <span className="font-medium">{formatPercentDisplay(scenario.payoutRate)}</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-xs text-text_secondary block">Avg. Payout</span>
+                        <span className="font-medium">{formatCurrencyDisplay(scenario.avgPayout)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )
       case 'export':
@@ -291,8 +369,6 @@ function AppContent() {
     <div className="app-container min-h-screen bg-background text-text_primary">
       <main className="p-4 max-w-7xl mx-auto">
         <TabNavigation 
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
           activeCategory={activeCategory}
           setActiveCategory={setActiveCategory}
         />

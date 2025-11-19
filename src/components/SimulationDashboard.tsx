@@ -4,13 +4,26 @@ import { useSimulationContext } from '../context/SimulationContext'
 import { SAMPLE_SIZE, MarginCalculationResult, ExactThresholdItem } from '../utils/types'
 import ComparisonPlanCard from './ComparisonPlanCard'
 
+export interface ScenarioSnapshot {
+  name: string
+  margin: number
+  price: number
+  passRate: number
+  payoutRate: number
+  avgPayout: number
+}
+
+interface SimulationDashboardProps {
+  onSaveScenario?: (snapshot: ScenarioSnapshot) => void
+}
+
 interface ThresholdItem extends ExactThresholdItem {
   name: string
   pmValue: number | null
   marginsAtPMValue: MarginCalculationResult | null
 }
 
-export function SimulationDashboard() {
+export function SimulationDashboard({ onSaveScenario }: SimulationDashboardProps) {
   const { 
     results, 
     inputs, 
@@ -110,6 +123,7 @@ export function SimulationDashboard() {
     includeLive: !!inputs?.includeLive
   }
   const purchaseToPayoutRateDec = (safeInputs.evalPassRate / 100) * (safeInputs.simFundedRate / 100)
+  const payoutCosts = Math.max(0, safeMargin.cost - safeMargin.companyCostsTotal)
 
   // Copy overall summary, including thresholds for current global target
   const [overallCopied, setOverallCopied] = useState(false)
@@ -146,6 +160,21 @@ export function SimulationDashboard() {
     navigator.clipboard.writeText(lines.join('\n'))
     setOverallCopied(true)
     window.setTimeout(() => setOverallCopied(false), 1200)
+  }
+
+  const handleSaveScenario = () => {
+    if (!onSaveScenario) return
+    const defaultName = `Scenario ${new Date().toLocaleTimeString()}`
+    const name = window.prompt('Name this scenario', defaultName)
+    if (!name) return
+    onSaveScenario({
+      name: name.trim(),
+      margin: safeMargin.priceMargin,
+      price: safeInputs.evalPrice,
+      passRate: safeInputs.evalPassRate,
+      payoutRate: safeInputs.simFundedRate,
+      avgPayout: safeInputs.avgPayout
+    })
   }
   
   // For comparison mode
@@ -205,6 +234,14 @@ export function SimulationDashboard() {
             >
               {overallCopied ? <Check className="w-4 h-4 transition-transform" /> : <CopyIcon className="w-4 h-4" />}
             </button>
+            {onSaveScenario && (
+              <button
+                onClick={handleSaveScenario}
+                className="px-3 py-2 rounded-md bg-white/20 hover:bg-white/30 text-sm font-medium text-white"
+              >
+                Save
+              </button>
+            )}
             <div className="text-right">
               <span className="text-xs font-medium text-white/80">Net Revenue</span>
               <div className="text-lg font-bold">{formatCurrency(safeMargin.netRevenue)}</div>
@@ -234,8 +271,12 @@ export function SimulationDashboard() {
               </div>
             </div>
             <div className="flex justify-between border-t border-border pt-2">
-              <span className="text-xs">Payout Cost</span>
-              <span className="font-medium text-red-500">{formatCurrency(safeMargin.cost)}</span>
+              <span className="text-xs">Payout Costs</span>
+              <span className="font-medium text-red-500">{formatCurrency(payoutCosts)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-xs">Company Costs</span>
+              <span className="font-medium text-red-500">{formatCurrency(safeMargin.companyCostsTotal)}</span>
             </div>
             <div className="flex justify-between border-t border-border pt-2">
               <span className="text-xs">Net Revenue</span>
@@ -288,6 +329,10 @@ export function SimulationDashboard() {
             <div>
               <span className="text-xs text-text_secondary block">Purchase to Payout</span>
               <span className="font-medium">{formatPercent(purchaseToPayoutRateDec)}</span>
+            </div>
+            <div>
+              <span className="text-xs text-text_secondary block">Avg. Payout</span>
+              <span className="font-medium">{formatCurrency(safeInputs.avgPayout)}</span>
             </div>
             <div>
               <span className="text-xs text-text_secondary block">Sample Size</span>
