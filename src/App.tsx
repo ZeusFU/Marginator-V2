@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, useRef } from 'react'
+import React, { useState, useLayoutEffect, useEffect, useRef } from 'react'
 import 'react-tabs/style/react-tabs.css'
 import { 
   Chart as ChartJS, 
@@ -75,19 +75,41 @@ function AppContent() {
   const [popoverPosition, setPopoverPosition] = useState({ top: 70, left: 16 })
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const variablesButtonRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
-    if (!isVariablesOpen || !variablesButtonRef.current) return
+    if (!isVariablesOpen || !chartContainerRef.current || !variablesButtonRef.current) return
     const updatePosition = () => {
+      const containerRect = chartContainerRef.current!.getBoundingClientRect()
       const buttonRect = variablesButtonRef.current!.getBoundingClientRect()
-      const maxLeft = Math.max(16, Math.min(window.innerWidth - 360, buttonRect.left - 16))
-      setPopoverPosition({
-        top: buttonRect.bottom + 12,
-        left: maxLeft
-      })
+      const width = 340
+      const leftRelative = buttonRect.left - containerRect.left + buttonRect.width / 2 - width / 2
+      const clampedLeft = Math.min(
+        Math.max(16, leftRelative),
+        containerRect.width - width - 16
+      )
+      const top = buttonRect.bottom - containerRect.top + 12
+      setPopoverPosition({ top, left: clampedLeft })
     }
     updatePosition()
     window.addEventListener('resize', updatePosition)
-    return () => window.removeEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [isVariablesOpen])
+
+  useEffect(() => {
+    if (!isVariablesOpen) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        variablesButtonRef.current?.contains(event.target as Node) ||
+        popoverRef.current?.contains(event.target as Node)
+      ) return
+      setIsVariablesOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isVariablesOpen])
 
   // Helper functions
@@ -273,17 +295,13 @@ function AppContent() {
                 {renderActiveChart()}
               </>
             )}
-            {isVariablesOpen && (
-              <>
-                <div className="fixed inset-0 z-30 bg-black/60" onClick={() => setIsVariablesOpen(false)} />
-                <VariablesPopover
-                  isOpen={isVariablesOpen}
-                  onClose={() => setIsVariablesOpen(false)}
-                  onRun={handleRunSimulation}
-                  position={popoverPosition}
-                />
-              </>
-            )}
+            <VariablesPopover
+              isOpen={isVariablesOpen}
+              onClose={() => setIsVariablesOpen(false)}
+              onRun={handleRunSimulation}
+              position={popoverPosition}
+              popoverRef={popoverRef}
+            />
           </div>
         )
       case 'thresholds':
@@ -414,46 +432,6 @@ function AppContent() {
           {renderCategoryContent()}
         </div>
       </main>
-      {isVariablesOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="w-full max-w-5xl bg-card border border-border rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <div>
-                <h2 className="text-lg font-semibold">Input Parameters</h2>
-                <p className="text-xs text-text_secondary">Adjust variables and re-run the simulation</p>
-              </div>
-              <button
-                aria-label="Close variables"
-                onClick={() => setIsVariablesOpen(false)}
-                className="text-text_secondary hover:text-text_primary text-lg"
-              >
-                &times;
-              </button>
-            </div>
-            <div className="p-4 overflow-y-auto">
-              <Sidebar isSidebarOpen={true} setIsSidebarOpen={() => {}} inline />
-            </div>
-            <div className="flex justify-end gap-3 p-4 border-t border-border">
-              <button
-                onClick={() => setIsVariablesOpen(false)}
-                className="px-4 py-2 rounded-md border border-border text-text_primary hover:bg-surface/70"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  handleRunSimulation()
-                  setIsVariablesOpen(false)
-                }}
-                className="px-4 py-2 rounded-md bg-primary text-white font-medium"
-                disabled={isLoading}
-              >
-                {isLoading ? 'Processing...' : 'Run & Apply'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       <Toast
         visible={showToast.visible}
         message={showToast.message}

@@ -8,9 +8,10 @@ interface VariablesPopoverProps {
   onClose: () => void
   onRun: () => void
   position?: { top: number; left: number }
+  popoverRef: React.RefObject<HTMLDivElement>
 }
 
-export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70, left: 16 } }: VariablesPopoverProps) {
+export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70, left: 16 }, popoverRef }: VariablesPopoverProps) {
   const { inputs, updateInput, isLoading } = useSimulationContext()
   const [showCompanyCosts, setShowCompanyCosts] = useState(false)
 
@@ -18,9 +19,11 @@ export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70,
 
   return (
     <div
-      className="fixed z-40 w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl"
+      ref={popoverRef}
+      className="absolute z-40 w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl"
       style={{ top: position.top, left: position.left }}
     >
+      <div className="absolute -top-2 left-12 w-4 h-4 bg-card border-l border-t border-border rotate-45" />
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center text-primary">
