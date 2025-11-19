@@ -228,6 +228,7 @@ function AppContent() {
       case 'charts':
         return (
           <div className="chart-container p-4 bg-card rounded-lg shadow-sm">
+            <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
             {error ? (
               <div className="error-message p-4 bg-red-100 text-red-700 rounded-md">
                 {error}
@@ -240,7 +241,6 @@ function AppContent() {
             ) : results ? (
               <>
                 <SimulationDashboard onSaveScenario={handleScenarioSave} />
-                <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
                 {renderActiveChart()}
               </>
             ) : (
