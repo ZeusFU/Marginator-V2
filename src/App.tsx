@@ -255,7 +255,7 @@ function AppContent() {
     switch (activeCategory) {
       case 'charts':
         return (
-          <div ref={chartContainerRef} className="chart-container relative p-4 bg-card rounded-lg shadow-sm overflow-visible">
+          <div ref={chartContainerRef} className="chart-container relative p-4 pl-10 md:pl-14 bg-card rounded-lg shadow-sm overflow-visible">
             {error ? (
               <div className="error-message p-4 bg-red-100 text-red-700 rounded-md">
                 {error}
@@ -267,15 +267,16 @@ function AppContent() {
               </div>
             ) : results ? (
               <>
-                <button
+                <div className="absolute top-4 left-0">
+                  <button
                   ref={variablesButtonRef}
                   onClick={() => setIsVariablesOpen(!isVariablesOpen)}
                   aria-label="Adjust variables"
-                  className={`absolute top-4 w-11 h-11 rounded-2xl border shadow-sm flex items-center justify-center ${isVariablesOpen ? 'bg-primary text-white border-primary' : 'bg-surface text-primary border-border hover:bg-surface/80'}`}
-                  style={{ left: '-3.5rem' }}
-                >
-                  <SettingsIcon className="w-5 h-5" />
-                </button>
+                    className={`w-11 h-11 rounded-2xl border shadow-sm flex items-center justify-center ${isVariablesOpen ? 'bg-primary text-white border-primary' : 'bg-surface text-primary border-border hover:bg-surface/80'}`}
+                  >
+                    <SettingsIcon className="w-5 h-5" />
+                  </button>
+                </div>
                 <SimulationDashboard onSaveScenario={handleScenarioSave} />
                 <div className="mt-6 mb-4">
                   <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -284,15 +285,16 @@ function AppContent() {
               </>
             ) : (
               <>
-                <button
+                <div className="absolute top-4 left-0">
+                  <button
                   ref={variablesButtonRef}
                   onClick={() => setIsVariablesOpen(!isVariablesOpen)}
                   aria-label="Adjust variables"
-                  className={`absolute top-4 w-11 h-11 rounded-2xl border shadow-sm flex items-center justify-center ${isVariablesOpen ? 'bg-primary text-white border-primary' : 'bg-surface text-primary border-border hover:bg-surface/80'}`}
-                  style={{ left: '-3.5rem' }}
-                >
-                  <SettingsIcon className="w-5 h-5" />
-                </button>
+                    className={`w-11 h-11 rounded-2xl border shadow-sm flex items-center justify-center ${isVariablesOpen ? 'bg-primary text-white border-primary' : 'bg-surface text-primary border-border hover:bg-surface/80'}`}
+                  >
+                    <SettingsIcon className="w-5 h-5" />
+                  </button>
+                </div>
                 <div className="mb-4">
                   <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
                 </div>
