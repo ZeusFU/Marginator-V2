@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useLayoutEffect, useRef } from 'react'
 import 'react-tabs/style/react-tabs.css'
 import { 
   Chart as ChartJS, 
@@ -21,7 +21,8 @@ import { TabNavigation } from './components/TabNavigation'
 import { ChartTabs } from './components/ChartTabs'
 import { Toast } from './components/Toast'
 import SimulationDashboard, { ScenarioSnapshot } from './components/SimulationDashboard'
-import { InlineParameters as Sidebar } from './components/Sidebar'
+import { VariablesPopover } from './components/VariablesPopover'
+import { Settings as SettingsIcon } from 'lucide-react'
 import EvalPriceChart from './charts/EvalPriceChart'
 import PtrChart from './charts/PtrChart'
 import AvgPayoutChart from './charts/AvgPayoutChart'
@@ -71,6 +72,20 @@ function AppContent() {
   })
   const [savedScenarios, setSavedScenarios] = useState<Array<ScenarioSnapshot & { id: string; createdAt: number }>>([])
   const [isVariablesOpen, setIsVariablesOpen] = useState(false)
+  const [popoverPosition, setPopoverPosition] = useState({ top: 70, left: 16 })
+  const chartContainerRef = useRef<HTMLDivElement>(null)
+  const variablesButtonRef = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => {
+    if (!isVariablesOpen) return
+    if (chartContainerRef.current && variablesButtonRef.current) {
+      const containerRect = chartContainerRef.current.getBoundingClientRect()
+      const buttonRect = variablesButtonRef.current.getBoundingClientRect()
+      setPopoverPosition({
+        top: buttonRect.bottom - containerRect.top + 12,
+        left: Math.max(16, buttonRect.left - containerRect.left)
+      })
+    }
+  }, [isVariablesOpen])
 
   // Helper functions
   const displayToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -211,7 +226,7 @@ function AppContent() {
     switch (activeCategory) {
       case 'charts':
         return (
-          <div className="chart-container p-4 bg-card rounded-lg shadow-sm">
+          <div ref={chartContainerRef} className="chart-container relative p-4 bg-card rounded-lg shadow-sm overflow-visible">
             {error ? (
               <div className="error-message p-4 bg-red-100 text-red-700 rounded-md">
                 {error}
@@ -223,14 +238,16 @@ function AppContent() {
               </div>
             ) : results ? (
               <>
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                <div className="flex flex-wrap items-center gap-3 mb-4">
                   <button
-                    onClick={() => setIsVariablesOpen(true)}
-                    className="px-4 py-2 text-sm font-medium rounded-md bg-surface hover:bg-surface/80 border border-border text-text_primary"
+                    ref={variablesButtonRef}
+                    onClick={() => setIsVariablesOpen(!isVariablesOpen)}
+                    aria-label="Adjust variables"
+                    className={`w-11 h-11 rounded-2xl border shadow-sm flex items-center justify-center ${isVariablesOpen ? 'bg-primary text-white border-primary' : 'bg-surface text-primary border-border hover:bg-surface/80'}`}
                   >
-                    Variables
+                    <SettingsIcon className="w-5 h-5" />
                   </button>
+                  <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
                 </div>
                 <SimulationDashboard onSaveScenario={handleScenarioSave} />
                 <div className="mt-6">
@@ -239,18 +256,26 @@ function AppContent() {
               </>
             ) : (
               <>
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                <div className="flex flex-wrap items-center gap-3 mb-4">
                   <button
-                    onClick={() => setIsVariablesOpen(true)}
-                    className="px-4 py-2 text-sm font-medium rounded-md bg-surface hover:bg-surface/80 border border-border text-text_primary"
+                    ref={variablesButtonRef}
+                    onClick={() => setIsVariablesOpen(!isVariablesOpen)}
+                    aria-label="Adjust variables"
+                    className={`w-11 h-11 rounded-2xl border shadow-sm flex items-center justify-center ${isVariablesOpen ? 'bg-primary text-white border-primary' : 'bg-surface text-primary border-border hover:bg-surface/80'}`}
                   >
-                    Variables
+                    <SettingsIcon className="w-5 h-5" />
                   </button>
+                  <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
                 </div>
                 {renderActiveChart()}
               </>
             )}
+            <VariablesPopover
+              isOpen={isVariablesOpen}
+              onClose={() => setIsVariablesOpen(false)}
+              onRun={handleRunSimulation}
+              position={popoverPosition}
+            />
           </div>
         )
       case 'thresholds':
