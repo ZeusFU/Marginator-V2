@@ -63,13 +63,14 @@ function AppContent() {
 
   // Local UI state
   const [activeTab, setActiveTab] = useState(0)
-  const [activeCategory, setActiveCategory] = useState('variables')
+  const [activeCategory, setActiveCategory] = useState('charts')
   const [showToast, setShowToast] = useState<{visible: boolean, message: string, type: 'success' | 'error'}>({
     visible: false, 
     message: '', 
     type: 'success'
   })
   const [savedScenarios, setSavedScenarios] = useState<Array<ScenarioSnapshot & { id: string; createdAt: number }>>([])
+  const [isVariablesOpen, setIsVariablesOpen] = useState(false)
 
   // Helper functions
   const displayToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -208,23 +209,6 @@ function AppContent() {
   // Render content based on the current activeCategory
   const renderCategoryContent = () => {
     switch (activeCategory) {
-      case 'variables':
-        return (
-          <div className="input-container">
-            <div className="grid grid-cols-1 gap-6">
-              <Sidebar isSidebarOpen={true} setIsSidebarOpen={() => {}} inline />
-              <div className="bg-card p-6 rounded-lg border border-border">
-                <button
-                  onClick={handleRunSimulation}
-                  className="run-simulation-button w-full p-3 bg-primary text-white rounded-md font-medium"
-                  disabled={isLoading}
-                >
-                  {isLoading ? 'Processing...' : 'Run Simulation'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )
       case 'charts':
         return (
           <div className="chart-container p-4 bg-card rounded-lg shadow-sm">
@@ -239,15 +223,31 @@ function AppContent() {
               </div>
             ) : results ? (
               <>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <button
+                    onClick={() => setIsVariablesOpen(true)}
+                    className="px-4 py-2 text-sm font-medium rounded-md bg-surface hover:bg-surface/80 border border-border text-text_primary"
+                  >
+                    Variables
+                  </button>
+                </div>
                 <SimulationDashboard onSaveScenario={handleScenarioSave} />
                 <div className="mt-6">
-                  <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
                   {renderActiveChart()}
                 </div>
               </>
             ) : (
               <>
-                <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <ChartTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                  <button
+                    onClick={() => setIsVariablesOpen(true)}
+                    className="px-4 py-2 text-sm font-medium rounded-md bg-surface hover:bg-surface/80 border border-border text-text_primary"
+                  >
+                    Variables
+                  </button>
+                </div>
                 {renderActiveChart()}
               </>
             )}
@@ -381,6 +381,46 @@ function AppContent() {
           {renderCategoryContent()}
         </div>
       </main>
+      {isVariablesOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-5xl bg-card border border-border rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <div>
+                <h2 className="text-lg font-semibold">Input Parameters</h2>
+                <p className="text-xs text-text_secondary">Adjust variables and re-run the simulation</p>
+              </div>
+              <button
+                aria-label="Close variables"
+                onClick={() => setIsVariablesOpen(false)}
+                className="text-text_secondary hover:text-text_primary text-lg"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto">
+              <Sidebar isSidebarOpen={true} setIsSidebarOpen={() => {}} inline />
+            </div>
+            <div className="flex justify-end gap-3 p-4 border-t border-border">
+              <button
+                onClick={() => setIsVariablesOpen(false)}
+                className="px-4 py-2 rounded-md border border-border text-text_primary hover:bg-surface/70"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  handleRunSimulation()
+                  setIsVariablesOpen(false)
+                }}
+                className="px-4 py-2 rounded-md bg-primary text-white font-medium"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Processing...' : 'Run & Apply'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <Toast
         visible={showToast.visible}
         message={showToast.message}
