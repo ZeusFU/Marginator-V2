@@ -24,7 +24,7 @@ function DetailsRow({
           <span className={`ml-2 font-medium ${isTopLevel ? 'text-lg' : 'text-sm'} ${valueClass}`}>{summaryValue}</span>
           {/* Simple SVG Chevron for dropdown indicator */}
           {children && (
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 ml-1 text-gray-500 group-open:rotate-90 transition-transform duration-200">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 ml-1 text-text_secondary group-open:rotate-90 transition-transform duration-200">
               <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
             </svg>
           )}

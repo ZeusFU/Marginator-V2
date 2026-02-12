@@ -50,8 +50,8 @@ function AvgPayoutChart({
     {
       label: 'Price Margin',
       data: data.values.map((x: number, i: number) => ({ x, y: data.priceMargins[i] })),
-      borderColor: '#3A82F7',
-      backgroundColor: 'rgba(58, 130, 247, 0.3)',
+      borderColor: 'var(--accent, #4A7EC7)',
+      backgroundColor: 'rgba(107, 163, 224, 0.15)',
       tension: 0.1,
       pointRadius: 0,
       fill: 'origin',
@@ -85,11 +85,11 @@ function AvgPayoutChart({
   }
   
   return (
-    <div className="bg-surface pt-4 p-5 rounded-lg shadow-sm transition-all chart-container">
+    <div className="bg-card pt-4 p-5 rounded-xl border border-border shadow-soft transition-all chart-container">
       <ChartTitle 
         title="Average Payout Simulation" 
         chartKey="avgPayout" 
-        toggleMargin={toggleMargin} 
+        toggleMargin={() => toggleMargin('priceMargin')} 
         visibleMargins={visibleMargins}
         description="This chart shows how average payout affects your profit margins."
       />
@@ -108,9 +108,9 @@ function AvgPayoutChart({
       </div>
       
       {/* Key insights section */}
-      <div className="mt-4 p-4 bg-card/30 border border-border/50 rounded-lg">
+      <div className="mt-4 p-4 bg-surface/60 border border-border rounded-xl">
         <h4 className="text-sm font-medium mb-2 text-text_primary">Key Insights</h4>
-        <div className="text-sm text-gray-400 space-y-1">
+        <div className="text-sm text-text_secondary space-y-1">
           <p>
             Price Margin falls below {chartMarginTarget}% at: {formatThresholdText(thresholds.priceThreshold, val => `$${val.toFixed(2)}`)}
           </p>
@@ -120,7 +120,7 @@ function AvgPayoutChart({
       {/* Download button */}
       <button 
         onClick={downloadData} 
-        className="mt-4 px-4 py-2 bg-secondary text-background rounded hover:bg-opacity-80 flex items-center gap-2 text-sm font-medium"
+        className="mt-4 px-4 py-2 bg-secondary text-white rounded hover:bg-opacity-80 flex items-center gap-2 text-sm font-medium"
       >
         <Download className="w-4 h-4"/> Download Data
       </button>

@@ -1,7 +1,6 @@
 import jsPDF from 'jspdf';
 import { formatCurrency } from './chartConfig';
 import { MarginCalculationResult } from './types';
-import { SAMPLE_SIZE } from './types';
 
 /**
  * Helper function to sample evenly spaced points from an array for tables
@@ -30,9 +29,6 @@ export function generatePDFReport(params: {
   useActivationFee: boolean;
   activationFee: number;
   purchaseToPayoutRate: number;
-  includeLive: boolean;
-  avgLiveSaved: number;
-  avgLivePayout: number;
   evaluationPriceData: any;
   purchaseToPayoutRateData: any;
   averagePayoutData: any;
@@ -52,9 +48,6 @@ export function generatePDFReport(params: {
     useActivationFee,
     activationFee,
     purchaseToPayoutRate,
-    includeLive,
-    avgLiveSaved,
-    avgLivePayout,
     evaluationPriceData,
     purchaseToPayoutRateData,
     averagePayoutData,
@@ -64,8 +57,6 @@ export function generatePDFReport(params: {
     exactThresholds
   } = params;
 
-  // Default values for missing parameters
-  const discountPct = 0;
   const activationFeeDiscountPct = 0;
   const currentEvalPassRate = evalPassRate;
 
@@ -75,7 +66,7 @@ export function generatePDFReport(params: {
     const margin = 15;
     const contentWidth = pageWidth - (margin * 2);
     const reportTitle = `Margin Simulation Report`;
-    pdf.setProperties({ title: reportTitle, subject: 'Margin Simulation Analysis', author: 'Margin Simulator', creator: 'Margin Simulator' });
+    pdf.setProperties({ title: reportTitle, subject: 'Margin Simulation Analysis', author: 'Marginator V2', creator: 'Marginator V2' });
     
     const addPageHeader = (pageNum: number, totalPages: number) => {
       pdf.setFillColor(242, 242, 242);
@@ -115,7 +106,7 @@ export function generatePDFReport(params: {
     const tableY = summaryY + 40;
     pdf.setFontSize(12);
     pdf.setTextColor(0, 0, 0);
-    pdf.text("Financial Summary", margin, tableY);
+    pdf.text("Financial Summary (Per Account)", margin, tableY);
     pdf.setFillColor(240, 240, 240);
     pdf.rect(margin, tableY + 5, contentWidth, 8, 'F');
     pdf.setFontSize(9);
@@ -124,22 +115,14 @@ export function generatePDFReport(params: {
     pdf.text("Value", margin + contentWidth - 25, tableY + 10, { align: 'right' });
     
     const rows = [
-      ["Revenue", `$${formatCurrency(baseMargins.revenueEval)}`],
-      ["Cost", `$${formatCurrency(baseMargins.cost)}`],
+      ["Gross Revenue", `$${formatCurrency(baseMargins.grossRevenue)}`],
+      ["Total Cost", `$${formatCurrency(baseMargins.totalCost)}`],
       ["Net Revenue", `$${formatCurrency(baseMargins.netRevenue)}`]
     ];
     
-    if (includeLive) {
-      rows.push(
-        ["Live Revenue", `$${formatCurrency(baseMargins.totalLiveRevenue)}`],
-        ["Net Combined Revenue", `$${formatCurrency(baseMargins.netCombinedRevenue)}`],
-        ["Combined Margin", `${(baseMargins.combinedMargin * 100).toFixed(1)}%`]
-      );
-    }
-    
     let rowY = tableY + 13;
     rows.forEach((row, i) => {
-      const isHighlight = i === 2 || i === rows.length - 1;
+      const isHighlight = i === rows.length - 1;
       if (i % 2 === 0) {
         pdf.setFillColor(248, 248, 248);
         pdf.rect(margin, rowY, contentWidth, 7, 'F');
@@ -163,20 +146,11 @@ export function generatePDFReport(params: {
       ["Sim Funded Rate", `${simFundedRate.toFixed(2)}%`],
       ["Purchase to Payout", `${(purchaseToPayoutRate * 100).toFixed(2)}%`],
       ["Avg Payout", `$${avgPayout.toFixed(2)}`],
-      ["Sample Size", `${SAMPLE_SIZE.toLocaleString()}`]
     ];
     
     if (useActivationFee) {
       parameterData.push(
         ["Activation Fee", `$${activationFee.toFixed(2)}`],
-        ["Activation Fee Discount", `${activationFeeDiscountPct}%`]
-      );
-    }
-    
-    if (includeLive) {
-      parameterData.push(
-        ["% Saved from MLL", `${avgLiveSaved}%`],
-        ["Avg Live Payout", `$${avgLivePayout.toFixed(2)}`]
       );
     }
     
@@ -221,50 +195,51 @@ export function generatePDFReport(params: {
     pdf.text("Change Needed", margin + 160, thresholdPageTop + 20);
     
     let thresholdY = thresholdPageTop + 25;
-    exactThresholds.forEach((item, i) => {
-      const currentVal = item.name === "Eval Price" ? evalPrice : item.name === "Purchase to Payout Rate" ? purchaseToPayoutRate : item.name === "Avg Payout" ? avgPayout : 0;
-      let changeText = "N/A";
-      let changePercent = 0;
-      if (item.pmValue !== null && currentVal !== 0) {
-        const diff = item.pmValue - currentVal;
-        changePercent = (diff / currentVal) * 100;
-        changeText = changePercent > 0 ? `+${changePercent.toFixed(1)}%` : `${changePercent.toFixed(1)}%`;
-      }
-      
-      if (i % 2 === 0) {
-        pdf.setFillColor(248, 248, 248);
-        pdf.rect(margin, thresholdY, contentWidth, 7, 'F');
-      }
-      
-      pdf.setFontSize(9);
-      pdf.setTextColor(80, 80, 80);
-      pdf.text(item.name, margin + 5, thresholdY + 5);
-      
-      if (item.name === "Eval Price" || item.name === "Avg Payout") {
-        pdf.text(`$${currentVal.toFixed(2)}`, margin + 60, thresholdY + 5);
-        pdf.text(item.pmValue !== null ? `$${item.pmValue.toFixed(2)}` : 'N/A', margin + 110, thresholdY + 5);
-      } else {
-        pdf.text(`${(currentVal * 100).toFixed(2)}%`, margin + 60, thresholdY + 5);
-        pdf.text(item.pmValue !== null ? `${(item.pmValue * 100).toFixed(2)}%` : 'N/A', margin + 110, thresholdY + 5);
-      }
-      
-      if (item.pmValue !== null) {
-        if (Math.abs(changePercent) > 50) {
-          pdf.setTextColor(200, 0, 0);
-        } else if (Math.abs(changePercent) > 20) {
-          pdf.setTextColor(200, 150, 0);
-        } else {
-          pdf.setTextColor(0, 150, 0);
+    if (Array.isArray(exactThresholds)) {
+      exactThresholds.forEach((item: any, i: number) => {
+        const currentVal = item.name === "Eval Price" ? evalPrice : item.name === "Purchase to Payout Rate" ? purchaseToPayoutRate : item.name === "Avg Payout" ? avgPayout : 0;
+        let changeText = "N/A";
+        let changePercent = 0;
+        if (item.pmValue !== null && currentVal !== 0) {
+          const diff = item.pmValue - currentVal;
+          changePercent = (diff / currentVal) * 100;
+          changeText = changePercent > 0 ? `+${changePercent.toFixed(1)}%` : `${changePercent.toFixed(1)}%`;
         }
-      }
-      
-      pdf.text(changeText, margin + 160, thresholdY + 5);
-      pdf.setTextColor(80, 80, 80);
-      thresholdY += 7;
-    });
+        
+        if (i % 2 === 0) {
+          pdf.setFillColor(248, 248, 248);
+          pdf.rect(margin, thresholdY, contentWidth, 7, 'F');
+        }
+        
+        pdf.setFontSize(9);
+        pdf.setTextColor(80, 80, 80);
+        pdf.text(item.name, margin + 5, thresholdY + 5);
+        
+        if (item.name === "Eval Price" || item.name === "Avg Payout") {
+          pdf.text(`$${currentVal.toFixed(2)}`, margin + 60, thresholdY + 5);
+          pdf.text(item.pmValue !== null ? `$${item.pmValue.toFixed(2)}` : 'N/A', margin + 110, thresholdY + 5);
+        } else {
+          pdf.text(`${(currentVal * 100).toFixed(2)}%`, margin + 60, thresholdY + 5);
+          pdf.text(item.pmValue !== null ? `${(item.pmValue * 100).toFixed(2)}%` : 'N/A', margin + 110, thresholdY + 5);
+        }
+        
+        if (item.pmValue !== null) {
+          if (Math.abs(changePercent) > 50) {
+            pdf.setTextColor(200, 0, 0);
+          } else if (Math.abs(changePercent) > 20) {
+            pdf.setTextColor(200, 150, 0);
+          } else {
+            pdf.setTextColor(0, 150, 0);
+          }
+        }
+        
+        pdf.text(changeText, margin + 160, thresholdY + 5);
+        pdf.setTextColor(80, 80, 80);
+        thresholdY += 7;
+      });
+    }
     
-    // Add simulation data tables for each variable
-    // Evaluation Price Simulation Data Table
+    // Evaluation Price Simulation Data
     pdf.addPage();
     addPageHeader(3, 5);
     pdf.setFontSize(14);
@@ -290,8 +265,6 @@ export function generatePDFReport(params: {
     pdf.text("Cost ($)", margin + 125, 59);
     pdf.text("Net Revenue ($)", margin + 165, 59);
     
-    // Create tables with sample data from simulations
-    // Generate PDF filename with date
     const dateStr = new Date().toISOString().split('T')[0];
     const filename = `margin-simulation-data-${dateStr}.pdf`;
     pdf.save(filename);
@@ -301,4 +274,4 @@ export function generatePDFReport(params: {
     console.error("Error in PDF generation:", err);
     throw new Error("PDF generation failed: " + (err instanceof Error ? err.message : "Unknown error"));
   }
-} 
+}

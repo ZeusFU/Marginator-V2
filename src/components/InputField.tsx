@@ -122,7 +122,7 @@ function InputField({
           max={max}
           step={step}
           placeholder={placeholder}
-          className={`bg-card border ${errorMessage ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'} rounded block w-full sm:text-sm text-text_primary py-1.5 transition-colors duration-150 ${unit === '$' ? 'pl-7' : 'pl-3'} pr-3`}
+          className={`bg-card border ${errorMessage ? 'border-red-400' : 'border-border'} rounded-lg block w-full sm:text-sm text-text_primary py-1.5 transition-colors duration-150 ${unit === '$' ? 'pl-7' : 'pl-3'} pr-3`}
           aria-invalid={!!errorMessage}
           aria-describedby={errorMessage ? `${id}-error` : undefined}
           disabled={disabled}

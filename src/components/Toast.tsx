@@ -25,7 +25,7 @@ export function Toast({
   if (!visible) return null
 
   return (
-    <div className={`toast toast-${type} fixed z-50 bottom-4 right-4 px-4 py-3 rounded-md shadow-lg max-w-xs`}>
+    <div className={`toast toast-${type} fixed z-50 bottom-4 right-4 px-4 py-3 rounded-xl shadow-card max-w-xs`}>
       <div className="toast-content text-sm">
         <div className={`flex items-center ${type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
           {type === 'success' ? (
@@ -41,7 +41,7 @@ export function Toast({
         </div>
       </div>
       <button 
-        className="toast-close absolute top-2 right-2 text-gray-500 hover:text-gray-800" 
+        className="toast-close absolute top-2 right-2 text-text_secondary hover:text-text_primary" 
         onClick={onClose}
       >
         ×

@@ -7,7 +7,6 @@ interface ThresholdsTableProps {
   evalPrice: number | string;
   purchaseToPayoutRate: number;
   avgPayout: number | string;
-  includeLive: boolean;
 }
 
 function ThresholdsTable({
@@ -15,9 +14,7 @@ function ThresholdsTable({
   evalPrice,
   purchaseToPayoutRate,
   avgPayout,
-  includeLive
 }: ThresholdsTableProps) {
-  // Helper to safely convert string or number to number
   const toNumber = (value: string | number): number => {
     if (typeof value === 'number') return value;
     if (value === '') return 0;
@@ -25,23 +22,22 @@ function ThresholdsTable({
   };
 
   return (
-    <div className="bg-surface pt-4">
+    <div className="pt-4">
       <h3 className="text-base md:text-lg font-semibold mb-3 text-text_primary">Exact 50% Margin Threshold Values</h3>
       
-      {/* Price Margin Table */}
       <h4 className="text-sm font-semibold mb-3 text-secondary">Price Margin Threshold (50%)</h4>
-      <p className="text-sm text-gray-400 mb-4">
-        Approximate value for each variable (adjusted individually) resulting in a <span className="font-semibold">Price Margin</span> of 50%.
+      <p className="text-sm text-text_secondary mb-4">
+        Approximate value for each variable (adjusted individually) resulting in a <span className="font-semibold text-text_primary">Price Margin</span> of 50%.
       </p>
       
       <div className="overflow-x-auto mb-8">
-        <table className="min-w-full bg-card border border-gray-700 rounded-md">
+        <table className="min-w-full bg-card border border-border rounded-xl overflow-hidden">
           <thead>
-            <tr className="border-b border-gray-700 text-left text-xs font-medium">
-              <th className="px-4 py-2 text-secondary">Variable</th>
-              <th className="px-4 py-2 text-secondary">Current Value</th>
-              <th className="px-4 py-2 text-secondary">50% Threshold</th>
-              <th className="px-4 py-2 text-secondary">Change Needed</th>
+            <tr className="border-b border-border text-left text-xs font-medium bg-surface">
+              <th className="px-4 py-2.5 text-text_secondary">Variable</th>
+              <th className="px-4 py-2.5 text-text_secondary">Current Value</th>
+              <th className="px-4 py-2.5 text-text_secondary">50% Threshold</th>
+              <th className="px-4 py-2.5 text-text_secondary">Change Needed</th>
             </tr>
           </thead>
           <tbody className="text-sm">
@@ -65,15 +61,15 @@ function ThresholdsTable({
               }
               
               return (
-                <tr key={item.name} className="border-b border-gray-700 hover:bg-gray-800/50">
-                  <td className="px-4 py-2 font-medium">{item.name}</td>
-                  <td className="px-4 py-2">{
+                <tr key={item.name} className="border-b border-border/60 hover:bg-surface/50 transition-colors">
+                  <td className="px-4 py-2.5 font-medium text-text_primary">{item.name}</td>
+                  <td className="px-4 py-2.5 text-text_secondary tabular-nums">{
                     item.name === "Eval Price" ? `$${toNumber(evalPrice).toFixed(2)}` :
                     item.name === "Purchase to Payout Rate" ? `${(purchaseToPayoutRate * 100).toFixed(2)}%` :
                     item.name === "Avg Payout" ? `$${toNumber(avgPayout).toFixed(2)}` : ""
                   }</td>
-                  <td className="px-4 py-2">{formatValue(item.name, item.pmValue)}</td>
-                  <td className={`px-4 py-2 ${item.pmValue === null ? 'text-gray-400' : Math.abs(currentVal !== 0 ? ((item.pmValue - currentVal) / currentVal) * 100 : 0) > 50 ? 'text-red-400' : 'text-green-400'}`}>
+                  <td className="px-4 py-2.5 tabular-nums">{formatValue(item.name, item.pmValue)}</td>
+                  <td className={`px-4 py-2.5 tabular-nums ${item.pmValue === null ? 'text-text_secondary' : Math.abs(currentVal !== 0 ? ((item.pmValue - currentVal) / currentVal) * 100 : 0) > 50 ? 'text-red-500' : 'text-green-600'}`}>
                     {changeText}
                   </td>
                 </tr>
@@ -86,4 +82,4 @@ function ThresholdsTable({
   );
 }
 
-export default ThresholdsTable; 
+export default ThresholdsTable;

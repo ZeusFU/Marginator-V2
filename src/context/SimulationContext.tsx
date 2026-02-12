@@ -2,13 +2,14 @@ import React, { createContext, useContext, ReactNode, useState, useMemo } from '
 import { jsPDF } from 'jspdf'
 import { 
   calculateMargins, 
-  find50PercentMarginValue, 
+  find50PercentMarginValue,
+  findTargetMarginValue,
   findThresholdValue,
   findMarginThresholds,
   generateSimulationData,
   adaptiveSampleRange
 } from '../utils/calculations'
-import { SAMPLE_SIZE, SIMULATION_STEPS, VisibleMarginsState } from '../utils/types'
+import { SIMULATION_STEPS, VisibleMarginsState } from '../utils/types'
 
 // Types
 interface SimulationInputs {
@@ -18,14 +19,10 @@ interface SimulationInputs {
   avgPayout: number | string
   useActivationFee: boolean
   activationFee: number | string
-  includeLive: boolean
-  avgLiveSaved: number | string
-  avgLivePayout: number | string
   // Company costs
   userFeePerAccount: number | string
   dataFeePerAccount: number | string
   accountFeePerAccount: number | string
-  // staffing now as percent of gross
   staffingFeePercent: number | string
   processorFeePercent: number | string
   affiliateFeePercent: number | string
@@ -88,9 +85,6 @@ interface ComparisonPlan {
   avgPayout: number | string
   useActivationFee: boolean
   activationFee: number | string
-  avgLiveSaved: number | string
-  avgLivePayout: number | string
-  includeLive: boolean
 }
 
 interface ComparisonPlanSimulation {
@@ -142,7 +136,6 @@ interface ComparisonPlanSimulation {
 
 // Context type definition
 interface SimulationContextType {
-  // Inputs and simulation state
   inputs: SimulationInputs
   updateInput: (field: keyof SimulationInputs, value: any) => void
   resetInputs: () => void
@@ -150,12 +143,8 @@ interface SimulationContextType {
   error: string | null
   results: SimulationResults | null
   runSimulation: () => SimulationResults | null
-  
-  // Chart visibility
   visibleMargins: VisibleMarginsState
   toggleMargin: (chart: keyof VisibleMarginsState, margin: 'priceMargin') => void
-  
-  // Comparison mode
   isComparisonMode: boolean
   comparisonPlans: ComparisonPlan[]
   selectedComparisonPlans: string[]
@@ -169,15 +158,12 @@ interface SimulationContextType {
   togglePlanSelection: (id: string) => void
   updateComparisonPlan: (id: string, field: keyof ComparisonPlan, value: any) => void
   calculateComparisonSimulations: () => void
-  // Global margin target to bias charts
   chartMarginTarget: number
   setChartMarginTarget: (percent: number) => void
 }
 
-// Create the context
 const SimulationContext = createContext<SimulationContextType | null>(null)
 
-// Default input values
 const defaultInputs: SimulationInputs = {
   evalPrice: '',
   evalPassRate: '',
@@ -185,9 +171,6 @@ const defaultInputs: SimulationInputs = {
   avgPayout: '',
   useActivationFee: false,
   activationFee: '',
-  includeLive: false,
-  avgLiveSaved: '',
-  avgLivePayout: '',
   userFeePerAccount: '',
   dataFeePerAccount: '',
   accountFeePerAccount: '',
@@ -198,609 +181,244 @@ const defaultInputs: SimulationInputs = {
   affiliateAppliesToActivation: false
 }
 
-// Helper function to generate a unique ID
 const generateId = () => `plan_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
 
-// Provider component
 export function SimulationProvider({ children }: { children: ReactNode }) {
-  // Simulation state
   const [inputs, setInputs] = useState<SimulationInputs>(defaultInputs)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<SimulationResults | null>(null)
   
-  // Chart visibility state
   const [visibleMargins, setVisibleMargins] = useState<VisibleMarginsState>({
     evalPrice: { priceMargin: true },
     ptrRate: { priceMargin: true },
     avgPayout: { priceMargin: true },
     payoutRate: { priceMargin: true },
     evalPriceRate: { priceMargin: true },
-    avgLivePayout: { priceMargin: true }
   })
   
-  // Comparison mode state
   const [isComparisonMode, setIsComparisonMode] = useState(false)
   const [comparisonPlans, setComparisonPlans] = useState<ComparisonPlan[]>([])
   const [selectedComparisonPlans, setSelectedComparisonPlans] = useState<string[]>([])
   const [comparisonSimulations, setComparisonSimulations] = useState<ComparisonPlanSimulation[]>([])
   const [isComparingSimulations, setIsComparingSimulations] = useState(false)
   const [comparisonError, setComparisonError] = useState<string | null>(null)
-  // Chart target margin (percent)
   const [chartMarginTarget, setChartMarginTarget] = useState<number>(50)
   
-  // Input update function
   const updateInput = (field: keyof SimulationInputs, value: any) => {
     setInputs(prev => ({ ...prev, [field]: value }))
   }
   
-  // Reset inputs function
   const resetInputs = () => {
     setInputs(defaultInputs)
     setResults(null)
   }
   
-  // Toggle margin visibility
   const toggleMargin = (chart: keyof VisibleMarginsState, margin: 'priceMargin') => {
     setVisibleMargins(prev => ({
       ...prev,
-      [chart]: {
-        ...prev[chart],
-        [margin]: !prev[chart][margin]
-      }
+      [chart]: { ...prev[chart], [margin]: !prev[chart][margin] }
     }))
   }
   
-  // Helper function to convert string or number to number
   const toNumber = (value: string | number): number => {
     if (typeof value === 'string') {
-      // Return a small positive value instead of 0 for empty strings
-      // This avoids validation errors while still providing a sensible default
       return value === '' ? 0.01 : Number(value) || 0.01
     }
-    return value || 0.01 // Ensure we don't return 0 or NaN
+    return value || 0.01
   }
+
+  // Helper: build the common company-cost args array
+  const companyCosts = () => {
+    const userFee = inputs.userFeePerAccount === '' ? 5.83 : toNumber(inputs.userFeePerAccount)
+    const dataFee = inputs.dataFeePerAccount === '' ? 2.073 : toNumber(inputs.dataFeePerAccount)
+    const accountFee = inputs.accountFeePerAccount === '' ? 3.5 : toNumber(inputs.accountFeePerAccount)
+    const staffing = inputs.staffingFeePercent === '' ? 3.5 : toNumber(inputs.staffingFeePercent)
+    const processor = inputs.processorFeePercent === '' ? 5.25 : toNumber(inputs.processorFeePercent)
+    const affiliate = inputs.affiliateFeePercent === '' ? 3 : toNumber(inputs.affiliateFeePercent)
+    const liveAlloc = inputs.liveAllocationPercent === '' ? 2 : toNumber(inputs.liveAllocationPercent)
+    const affApplies = !!inputs.affiliateAppliesToActivation
+    return { userFee, dataFee, accountFee, staffing, processor, affiliate, liveAlloc, affApplies }
+  }
+
+  // Shorthand: call calculateMargins with full params
+  const calc = (
+    ep: number, ptr: number, ap: number,
+    useAct: boolean, actFee: number, epr: number,
+    cc: ReturnType<typeof companyCosts>
+  ) => calculateMargins(
+    ep, ptr, ap, useAct, actFee, epr,
+    cc.userFee, cc.dataFee, cc.accountFee,
+    cc.staffing, cc.processor, cc.affiliate, cc.liveAlloc, cc.affApplies
+  )
   
-  // Simulation run function
   const runSimulation = () => {
     setIsLoading(true)
     setError(null)
     
     try {
-      // Parse inputs to numbers
       const evalPriceNum = toNumber(inputs.evalPrice)
-      const evalPassRateNum = toNumber(inputs.evalPassRate) / 100 // Convert percentage to decimal
-      const simFundedRateNum = toNumber(inputs.simFundedRate) / 100 // Convert percentage to decimal
+      const evalPassRateNum = toNumber(inputs.evalPassRate) / 100
+      const simFundedRateNum = toNumber(inputs.simFundedRate) / 100
       const avgPayoutNum = toNumber(inputs.avgPayout)
       const activationFeeNum = inputs.useActivationFee ? toNumber(inputs.activationFee) : 0
-      const avgLiveSavedNum = toNumber(inputs.avgLiveSaved)
-      const avgLivePayoutNum = toNumber(inputs.avgLivePayout)
-      const userFeePerAccount = inputs.userFeePerAccount === '' ? 5.83 : toNumber(inputs.userFeePerAccount)
-      const dataFeePerAccount = inputs.dataFeePerAccount === '' ? 2.073 : toNumber(inputs.dataFeePerAccount)
-      const accountFeePerAccount = inputs.accountFeePerAccount === '' ? 3.5 : toNumber(inputs.accountFeePerAccount)
-      const staffingFeePercent = inputs.staffingFeePercent === '' ? 3.5 : toNumber(inputs.staffingFeePercent)
-      const processorFeePercent = inputs.processorFeePercent === '' ? 5.25 : toNumber(inputs.processorFeePercent)
-      const affiliateFeePercent = inputs.affiliateFeePercent === '' ? 3 : toNumber(inputs.affiliateFeePercent)
-      const liveAllocationPercent = inputs.liveAllocationPercent === '' ? 2 : toNumber(inputs.liveAllocationPercent)
-      const affiliateAppliesToActivation = !!inputs.affiliateAppliesToActivation
+      const cc = companyCosts()
       
-      // Ensure key inputs are valid
       if (isNaN(evalPriceNum) || evalPriceNum <= 0) throw new Error('Evaluation price must be a positive number')
       if (isNaN(evalPassRateNum) || evalPassRateNum < 0 || evalPassRateNum > 1) throw new Error('Evaluation pass rate must be between 0% and 100%')
       if (isNaN(simFundedRateNum) || simFundedRateNum < 0 || simFundedRateNum > 1) throw new Error('Sim to funded rate must be between 0% and 100%')
       if (isNaN(avgPayoutNum) || avgPayoutNum < 0) throw new Error('Average payout must be a non-negative number')
       if (inputs.useActivationFee && (isNaN(activationFeeNum) || activationFeeNum < 0)) throw new Error('Activation fee must be a non-negative number when enabled')
-      if (inputs.includeLive) {
-        if (isNaN(avgLiveSavedNum) || avgLiveSavedNum < 0 || avgLiveSavedNum > 100) throw new Error('Average live saved must be between 0% and 100%')
-        if (isNaN(avgLivePayoutNum) || avgLivePayoutNum < 0) throw new Error('Average live payout must be a non-negative number')
-      }
       
-      // Derive purchase to payout rate (ptr = evalPassRate × simFundedRate)
       const purchaseToPayoutRate = evalPassRateNum * simFundedRateNum
+      const useAct = inputs.useActivationFee
       
-      // Calculate base margins using the input values
-      const baseMargins = calculateMargins(
-        evalPriceNum,
-        purchaseToPayoutRate,
-        avgPayoutNum,
-        inputs.useActivationFee, // Use activation fee toggle
-        activationFeeNum,
-        evalPassRateNum,
-        avgLiveSavedNum,
-        avgLivePayoutNum,
-        inputs.includeLive, // Use include live toggle
-        userFeePerAccount,
-        dataFeePerAccount,
-        accountFeePerAccount,
-        staffingFeePercent,
-        processorFeePercent,
-        affiliateFeePercent,
-        liveAllocationPercent,
-        affiliateAppliesToActivation
-      )
+      const baseMargins = calc(evalPriceNum, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum, cc)
       
-      // Create objects to store simulation data
-      const evaluationPriceData: {
-        values: number[];
-        priceMargins: number[];
-        revenue: number[];
-        cost: number[];
-        netRevenue: number[];
-        totalRevenue: number[];
-        totalNetRevenue: number[];
-      } = {
-        values: [],
-        priceMargins: [],
-        revenue: [],
-        cost: [],
-        netRevenue: [],
-        totalRevenue: [],
-        totalNetRevenue: []
-      }
-      
-      const purchaseToPayoutRateData: {
-        values: number[];
-        priceMargins: number[];
-        revenue: number[];
-        cost: number[];
-        netRevenue: number[];
-        totalRevenue: number[];
-        totalNetRevenue: number[];
-      } = {
-        values: [],
-        priceMargins: [],
-        revenue: [],
-        cost: [],
-        netRevenue: [],
-        totalRevenue: [],
-        totalNetRevenue: []
-      }
-      
-      const averagePayoutData: {
-        values: number[];
-        priceMargins: number[];
-        revenue: number[];
-        cost: number[];
-        netRevenue: number[];
-        totalRevenue: number[];
-        totalNetRevenue: number[];
-      } = {
-        values: [],
-        priceMargins: [],
-        revenue: [],
-        cost: [],
-        netRevenue: [],
-        totalRevenue: [],
-        totalNetRevenue: []
-      }
-      
-      const payoutRateData = {
-        combinationsPM: [] as Array<{x: number, y: number}>
-      }
-      
-      const evalPriceRateData = {
-        results: [] as Array<{
-          evalPrice: number,
-          dataPoints: Array<{x: number, y: number}>
-        }>
-      }
-      
-      // Generate data for evaluation price chart
+      // ── Eval Price data ──
+      const evaluationPriceData = { values: [] as number[], priceMargins: [] as number[], revenue: [] as number[], cost: [] as number[], netRevenue: [] as number[], totalRevenue: [] as number[], totalNetRevenue: [] as number[] }
       try {
-        // Center around threshold for chart target margin and adaptively sample near target
         const center = findThresholdValue(
           "Eval Price",
-          (value) => calculateMargins(
-            value, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
-            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
-            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
-          ).priceMargin,
-          chartMarginTarget / 100,
-          evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
+          (v) => calc(v, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum, cc).priceMargin,
+          chartMarginTarget / 100, evalPriceNum, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum
         ) || evalPriceNum
         const epMin = Math.max(10, center * 0.1)
         const epMax = Math.max(center * 2, epMin + 1)
-        const values = adaptiveSampleRange(
-          epMin,
-          epMax,
-          (x) => calculateMargins(
-            x, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
-            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
-            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
-          ).priceMargin,
-          chartMarginTarget / 100,
-          60,
-          3,
-          0.5 // 50% band around target
-        )
-        
-        for (const evalPrice of values) {
-          const margins = calculateMargins(
-            evalPrice,
-            purchaseToPayoutRate,
-            avgPayoutNum,
-            inputs.useActivationFee, // Use activation fee toggle
-            activationFeeNum,
-            evalPassRateNum,
-            avgLiveSavedNum,
-            avgLivePayoutNum,
-            inputs.includeLive, // Use include live toggle
-            userFeePerAccount,
-            dataFeePerAccount,
-            accountFeePerAccount,
-            staffingFeePercent,
-            processorFeePercent,
-            affiliateFeePercent,
-            liveAllocationPercent,
-            affiliateAppliesToActivation
-          )
-          
-          evaluationPriceData.values.push(evalPrice)
-          evaluationPriceData.priceMargins.push(margins.priceMargin * 100) // Convert to percentage
-          evaluationPriceData.revenue.push(margins.revenueEval)
-          evaluationPriceData.cost.push(margins.cost)
-          evaluationPriceData.netRevenue.push(margins.netRevenue)
-          evaluationPriceData.totalRevenue.push(margins.grossRevenue)
-          evaluationPriceData.totalNetRevenue.push(margins.netRevenue)
+        const values = adaptiveSampleRange(epMin, epMax,
+          (x) => calc(x, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum, cc).priceMargin,
+          chartMarginTarget / 100, 60, 3, 0.5)
+        for (const ep of values) {
+          const m = calc(ep, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum, cc)
+          evaluationPriceData.values.push(ep)
+          evaluationPriceData.priceMargins.push(m.priceMargin * 100)
+          evaluationPriceData.revenue.push(m.grossRevenue)
+          evaluationPriceData.cost.push(m.totalCost)
+          evaluationPriceData.netRevenue.push(m.netRevenue)
+          evaluationPriceData.totalRevenue.push(m.grossRevenue)
+          evaluationPriceData.totalNetRevenue.push(m.netRevenue)
         }
-      } catch (err) {
-        console.error('Error generating evaluation price data:', err)
-      }
+      } catch (err) { console.error('Error generating evaluation price data:', err) }
       
-      // Generate data for purchase to payout rate chart (0% to 100%)
+      // ── PTR data ──
+      const purchaseToPayoutRateData = { values: [] as number[], priceMargins: [] as number[], revenue: [] as number[], cost: [] as number[], netRevenue: [] as number[], totalRevenue: [] as number[], totalNetRevenue: [] as number[] }
       try {
-        // Center around target threshold for PTR and adaptively sample near target
-        const ptrCenter = findThresholdValue(
-          "Purchase to Payout Rate",
-          (value) => calculateMargins(
-            evalPriceNum, value, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
-            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
-            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
-          ).priceMargin,
-          chartMarginTarget / 100,
-          evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
-        )
-        const prMin = 0
-        const prMax = 1
-        const values = adaptiveSampleRange(
-          prMin,
-          prMax,
-          (v) => calculateMargins(
-            evalPriceNum, v, avgPayoutNum, inputs.useActivationFee, activationFeeNum,
-            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
-            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
-          ).priceMargin,
-          chartMarginTarget / 100,
-          60,
-          3,
-          0.5
-        )
-        
+        const values = adaptiveSampleRange(0, 1,
+          (v) => calc(evalPriceNum, v, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum, cc).priceMargin,
+          chartMarginTarget / 100, 60, 3, 0.5)
         for (const rate of values) {
-          const margins = calculateMargins(
-            evalPriceNum,
-            rate,
-            avgPayoutNum,
-            inputs.useActivationFee, // Use activation fee toggle
-            activationFeeNum,
-            evalPassRateNum,
-            avgLiveSavedNum,
-            avgLivePayoutNum,
-            inputs.includeLive, // Use include live toggle
-            userFeePerAccount,
-            dataFeePerAccount,
-            accountFeePerAccount,
-            staffingFeePercent,
-            processorFeePercent,
-            affiliateFeePercent,
-            affiliateAppliesToActivation
-          )
-          
+          const m = calc(evalPriceNum, rate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum, cc)
           purchaseToPayoutRateData.values.push(rate)
-          purchaseToPayoutRateData.priceMargins.push(margins.priceMargin * 100) // Convert to percentage
-          purchaseToPayoutRateData.revenue.push(margins.revenueEval)
-          purchaseToPayoutRateData.cost.push(margins.cost)
-          purchaseToPayoutRateData.netRevenue.push(margins.netRevenue)
-          purchaseToPayoutRateData.totalRevenue.push(margins.grossRevenue)
-          purchaseToPayoutRateData.totalNetRevenue.push(margins.netRevenue)
+          purchaseToPayoutRateData.priceMargins.push(m.priceMargin * 100)
+          purchaseToPayoutRateData.revenue.push(m.grossRevenue)
+          purchaseToPayoutRateData.cost.push(m.totalCost)
+          purchaseToPayoutRateData.netRevenue.push(m.netRevenue)
+          purchaseToPayoutRateData.totalRevenue.push(m.grossRevenue)
+          purchaseToPayoutRateData.totalNetRevenue.push(m.netRevenue)
         }
-      } catch (err) {
-        console.error('Error generating purchase to payout rate data:', err)
-      }
+      } catch (err) { console.error('Error generating PTR data:', err) }
       
-      // Generate data for average payout chart (0% to 300% of base value)
+      // ── Avg Payout data ──
+      const averagePayoutData = { values: [] as number[], priceMargins: [] as number[], revenue: [] as number[], cost: [] as number[], netRevenue: [] as number[], totalRevenue: [] as number[], totalNetRevenue: [] as number[] }
       try {
         const payoutCenter = findThresholdValue(
           "Avg Payout",
-          (value) => calculateMargins(
-            evalPriceNum, purchaseToPayoutRate, value, inputs.useActivationFee, activationFeeNum,
-            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
-            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
-          ).priceMargin,
-          chartMarginTarget / 100,
-          evalPriceNum, purchaseToPayoutRate, avgPayoutNum, inputs.useActivationFee, activationFeeNum, evalPassRateNum
+          (v) => calc(evalPriceNum, purchaseToPayoutRate, v, useAct, activationFeeNum, evalPassRateNum, cc).priceMargin,
+          chartMarginTarget / 100, evalPriceNum, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum
         ) || Math.max(500, avgPayoutNum)
         const apMin = 500
         const apMax = Math.max(5000, payoutCenter * 10)
-        const values = adaptiveSampleRange(
-          apMin,
-          apMax,
-          (p) => calculateMargins(
-            evalPriceNum, purchaseToPayoutRate, p, inputs.useActivationFee, activationFeeNum,
-            evalPassRateNum, avgLiveSavedNum, avgLivePayoutNum, inputs.includeLive,
-            userFeePerAccount, dataFeePerAccount, accountFeePerAccount, staffingFeePercent,
-            processorFeePercent, affiliateFeePercent, liveAllocationPercent, affiliateAppliesToActivation
-          ).priceMargin,
-          chartMarginTarget / 100,
-          60,
-          3,
-          0.5
-        )
-        
+        const values = adaptiveSampleRange(apMin, apMax,
+          (p) => calc(evalPriceNum, purchaseToPayoutRate, p, useAct, activationFeeNum, evalPassRateNum, cc).priceMargin,
+          chartMarginTarget / 100, 60, 3, 0.5)
         for (const payout of values) {
-          const margins = calculateMargins(
-            evalPriceNum,
-            purchaseToPayoutRate,
-            payout,
-            inputs.useActivationFee, // Use activation fee toggle
-            activationFeeNum,
-            evalPassRateNum,
-            avgLiveSavedNum,
-            avgLivePayoutNum,
-            inputs.includeLive, // Use include live toggle
-            userFeePerAccount,
-            dataFeePerAccount,
-            accountFeePerAccount,
-            staffingFeePercent,
-            processorFeePercent,
-            affiliateFeePercent,
-            affiliateAppliesToActivation
-          )
-          
+          const m = calc(evalPriceNum, purchaseToPayoutRate, payout, useAct, activationFeeNum, evalPassRateNum, cc)
           averagePayoutData.values.push(payout)
-          averagePayoutData.priceMargins.push(margins.priceMargin * 100) // Convert to percentage
-          averagePayoutData.revenue.push(margins.revenueEval)
-          averagePayoutData.cost.push(margins.cost)
-          averagePayoutData.netRevenue.push(margins.netRevenue)
-          averagePayoutData.totalRevenue.push(margins.grossRevenue)
-          averagePayoutData.totalNetRevenue.push(margins.netRevenue)
+          averagePayoutData.priceMargins.push(m.priceMargin * 100)
+          averagePayoutData.revenue.push(m.grossRevenue)
+          averagePayoutData.cost.push(m.totalCost)
+          averagePayoutData.netRevenue.push(m.netRevenue)
+          averagePayoutData.totalRevenue.push(m.grossRevenue)
+          averagePayoutData.totalNetRevenue.push(m.netRevenue)
         }
-      } catch (err) {
-        console.error('Error generating average payout data:', err)
-      }
+      } catch (err) { console.error('Error generating average payout data:', err) }
       
-      // Generate data for the payout rate chart
+      // ── Payout rate combination data ──
+      const targetFrac = chartMarginTarget / 100
+      const payoutRateData = { combinationsPM: [] as Array<{x: number, y: number}> }
       try {
-        // Generate rate values from 0.01 to 0.3 (1% to 30%)
         const rateValues = Array.from({ length: 30 }, (_, i) => 0.01 + i * 0.01)
-        const combinations = []
-        
-        // For each rate, find the avg payout that gives 50% margin
         for (const rate of rateValues) {
-                      const payout = findThresholdValue(
-              "Avg Payout for 50% Margin",
-              (payout) => calculateMargins(
-                evalPriceNum,
-                rate,
-                payout,
-                inputs.useActivationFee, // Use activation fee toggle
-                activationFeeNum,
-                evalPassRateNum, // Use actual eval pass rate
-                avgLiveSavedNum,
-                avgLivePayoutNum,
-                inputs.includeLive, // Use include live toggle
-                userFeePerAccount,
-                dataFeePerAccount,
-                accountFeePerAccount,
-                staffingFeePercent,
-                processorFeePercent,
-                affiliateFeePercent,
-                affiliateAppliesToActivation
-              ).priceMargin - 0.5, // Find where margin = 0.5
-            0,
-            evalPriceNum,
-            purchaseToPayoutRate,
-            avgPayoutNum,
-            inputs.useActivationFee,
-            activationFeeNum,
-            evalPassRateNum
-          );
-          
-          if (payout !== null) {
-            combinations.push({ x: rate, y: payout });
-          }
+          const payout = findThresholdValue(
+            "Avg Payout",
+            (p) => calc(evalPriceNum, rate, p, useAct, activationFeeNum, evalPassRateNum, cc).priceMargin,
+            targetFrac, evalPriceNum, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum
+          )
+          if (payout !== null && payout > 0) payoutRateData.combinationsPM.push({ x: rate, y: payout })
         }
-        
-        payoutRateData.combinationsPM = combinations;
-      } catch (err) {
-        console.error('Error generating payout rate data:', err);
-      }
+      } catch (err) { console.error('Error generating payout rate data:', err) }
       
-      // Generate data for the eval price rate chart
+      // ── Eval price × rate data ──
+      // For different eval prices, find the max purchase-to-payout rate that achieves target margin
+      // Each curve holds avg payout constant at the current value
+      const evalPriceRateData = { results: [] as Array<{ evalPrice: number, dataPoints: Array<{x: number, y: number}> }> }
       try {
-        // Generate evaluation price values from 50 to 200 in steps of 25
-        const evalPrices = Array.from({ length: 7 }, (_, i) => 50 + i * 25);
-        
-        const evalPriceResults = [];
-        
-        // For each eval price, generate combinations that give 50% margin
-        for (const evalPrice of evalPrices) {
-          const dataPoints = [];
-          // Generate rate values from 0.01 to 0.3 (1% to 30%)
-          const rateValues = Array.from({ length: 30 }, (_, i) => 0.01 + i * 0.01);
-          
-          for (const rate of rateValues) {
-            const payout = findThresholdValue(
-              `Avg Payout for 50% Margin at Price ${evalPrice}`,
-              (payout) => calculateMargins(
-                evalPrice,
-                rate,
-                payout,
-                inputs.useActivationFee, // Use activation fee toggle
-                activationFeeNum,
-                evalPassRateNum, // Use actual eval pass rate
-                avgLiveSavedNum,
-                avgLivePayoutNum,
-                inputs.includeLive, // Use include live toggle
-                userFeePerAccount,
-                dataFeePerAccount,
-                accountFeePerAccount,
-                staffingFeePercent,
-                processorFeePercent,
-                affiliateFeePercent,
-                affiliateAppliesToActivation
-              ).priceMargin - 0.5, // Find where margin = 0.5
-              0,
-              evalPriceNum,
-              purchaseToPayoutRate,
-              avgPayoutNum,
-              inputs.useActivationFee,
-              activationFeeNum,
-              evalPassRateNum
-            );
-            
-            if (payout !== null) {
-              dataPoints.push({ x: evalPrice, y: rate });
-            }
+        const step = Math.max(10, Math.round(evalPriceNum * 0.15))
+        const epStart = Math.max(10, Math.round(evalPriceNum * 0.3))
+        const epEnd = Math.round(evalPriceNum * 2)
+        const evalPrices = Array.from({ length: 30 }, (_, i) => epStart + (epEnd - epStart) * (i / 29))
+
+        // Generate curves for a few avg-payout levels
+        const payoutLevels = [
+          Math.round(avgPayoutNum * 0.5),
+          Math.round(avgPayoutNum * 0.75),
+          avgPayoutNum,
+          Math.round(avgPayoutNum * 1.25),
+          Math.round(avgPayoutNum * 1.5),
+        ].filter((v, i, a) => v > 0 && a.indexOf(v) === i)
+
+        for (const payout of payoutLevels) {
+          const dataPoints: Array<{x: number, y: number}> = []
+          for (const ep of evalPrices) {
+            const rate = findThresholdValue(
+              "Purchase to Payout Rate",
+              (r) => calc(ep, r, payout, useAct, activationFeeNum, evalPassRateNum, cc).priceMargin,
+              targetFrac, evalPriceNum, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum
+            )
+            if (rate !== null && rate > 0 && rate <= 1) dataPoints.push({ x: ep, y: rate })
           }
-          
-          evalPriceResults.push({
-            evalPrice,
-            dataPoints
-          });
+          if (dataPoints.length > 1) {
+            evalPriceRateData.results.push({ evalPrice: payout, dataPoints })
+          }
         }
-        
-        evalPriceRateData.results = evalPriceResults;
-      } catch (err) {
-        console.error('Error generating eval price rate data:', err);
-      }
+      } catch (err) { console.error('Error generating eval price rate data:', err) }
       
-      // Calculate thresholds
+      // ── Thresholds ──
       const evaluationPriceThresholds = findMarginThresholds(
-        evaluationPriceData.values,
-        evaluationPriceData.priceMargins.map(margin => margin / 100) // Convert percentage to decimal
-      )
-      
+        evaluationPriceData.values, evaluationPriceData.priceMargins.map(m => m / 100), targetFrac)
       const purchaseToPayoutRateThresholds = findMarginThresholds(
-        purchaseToPayoutRateData.values,
-        purchaseToPayoutRateData.priceMargins.map(margin => margin / 100) // Convert percentage to decimal
-      )
-      
+        purchaseToPayoutRateData.values, purchaseToPayoutRateData.priceMargins.map(m => m / 100), targetFrac)
       const averagePayoutThresholds = findMarginThresholds(
-        averagePayoutData.values,
-        averagePayoutData.priceMargins.map(margin => margin / 100) // Convert percentage to decimal
-      )
+        averagePayoutData.values, averagePayoutData.priceMargins.map(m => m / 100), targetFrac)
       
-      // Calculate exact thresholds
       const exactThresholds = {
-        // Find threshold where price margin is exactly 0
         breakEvenEvalPrice: findThresholdValue(
           "Eval Price",
-          (value) => calculateMargins(
-            value,
-            purchaseToPayoutRate,
-            avgPayoutNum,
-            inputs.useActivationFee, // Use activation fee toggle
-            activationFeeNum,
-            evalPassRateNum,
-            avgLiveSavedNum,
-            avgLivePayoutNum,
-            inputs.includeLive, // Use include live toggle
-            userFeePerAccount,
-            dataFeePerAccount,
-            accountFeePerAccount,
-            staffingFeePercent,
-            processorFeePercent,
-            affiliateFeePercent,
-            affiliateAppliesToActivation
-          ).priceMargin,
-          0,
-          evalPriceNum,
-          purchaseToPayoutRate,
-          avgPayoutNum,
-          inputs.useActivationFee,
-          activationFeeNum,
-          evalPassRateNum
-        ),
-        // Find threshold where price margin is exactly 50%
-        fiftyPercentMarginEvalPrice: find50PercentMarginValue(
-          "Eval Price",
-          evalPriceNum,
-          purchaseToPayoutRate,
-          avgPayoutNum,
-          inputs.useActivationFee, // Use activation fee toggle
-          activationFeeNum,
-          evalPassRateNum,
-          avgLiveSavedNum,
-          avgLivePayoutNum,
-          inputs.includeLive // Use include live toggle
-        ),
-        // Find threshold where purchase to payout rate gives 0 margin
+          (v) => calc(v, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum, cc).priceMargin,
+          0, evalPriceNum, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum),
+        targetMarginEvalPrice: findTargetMarginValue(
+          "Eval Price", evalPriceNum, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum,
+          targetFrac, cc.userFee, cc.dataFee, cc.accountFee, cc.staffing, cc.processor, cc.affiliate, cc.liveAlloc, cc.affApplies),
         breakEvenPtrRate: findThresholdValue(
           "Purchase to Payout Rate",
-          (value) => calculateMargins(
-            evalPriceNum,
-            value,
-            avgPayoutNum,
-            inputs.useActivationFee, // Use activation fee toggle
-            activationFeeNum,
-            evalPassRateNum,
-            avgLiveSavedNum,
-            avgLivePayoutNum,
-            inputs.includeLive, // Use include live toggle
-            userFeePerAccount,
-            dataFeePerAccount,
-            accountFeePerAccount,
-            staffingFeePercent,
-            processorFeePercent,
-            affiliateFeePercent,
-            affiliateAppliesToActivation
-          ).priceMargin,
-          0,
-          evalPriceNum,
-          purchaseToPayoutRate,
-          avgPayoutNum,
-          inputs.useActivationFee,
-          activationFeeNum,
-          evalPassRateNum
-        ),
-        // Find threshold where avg payout gives 0 margin
+          (v) => calc(evalPriceNum, v, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum, cc).priceMargin,
+          0, evalPriceNum, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum),
         breakEvenAvgPayout: findThresholdValue(
           "Avg Payout",
-          (value) => calculateMargins(
-            evalPriceNum,
-            purchaseToPayoutRate,
-            value,
-            inputs.useActivationFee, // Use activation fee toggle
-            activationFeeNum,
-            evalPassRateNum,
-            avgLiveSavedNum,
-            avgLivePayoutNum,
-            inputs.includeLive, // Use include live toggle
-            userFeePerAccount,
-            dataFeePerAccount,
-            accountFeePerAccount,
-            staffingFeePercent,
-            processorFeePercent,
-            affiliateFeePercent,
-            affiliateAppliesToActivation
-          ).priceMargin,
-          0,
-          evalPriceNum,
-          purchaseToPayoutRate,
-          avgPayoutNum,
-          inputs.useActivationFee,
-          activationFeeNum,
-          evalPassRateNum
-        )
+          (v) => calc(evalPriceNum, purchaseToPayoutRate, v, useAct, activationFeeNum, evalPassRateNum, cc).priceMargin,
+          0, evalPriceNum, purchaseToPayoutRate, avgPayoutNum, useAct, activationFeeNum, evalPassRateNum)
       }
       
-      // Create results object
       const results: SimulationResults = {
         baseMargins,
         purchaseToPayoutRate,
@@ -826,11 +444,10 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
     }
   }
   
-  // Comparison mode functions
+  // ── Comparison mode ──
   const toggleComparisonMode = () => {
     setIsComparisonMode(prev => !prev)
     if (!isComparisonMode && comparisonPlans.length === 0) {
-      // Add current simulation as first plan
       const currentPlan: ComparisonPlan = {
         id: generateId(),
         name: 'Current Plan',
@@ -840,9 +457,6 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
         avgPayout: inputs.avgPayout,
         useActivationFee: inputs.useActivationFee,
         activationFee: inputs.activationFee,
-        avgLiveSaved: inputs.avgLiveSaved,
-        avgLivePayout: inputs.avgLivePayout,
-        includeLive: inputs.includeLive
       }
       setComparisonPlans([currentPlan])
       setSelectedComparisonPlans([currentPlan.id])
@@ -859,11 +473,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       avgPayout: '',
       useActivationFee: false,
       activationFee: '',
-      avgLiveSaved: '',
-      avgLivePayout: '',
-      includeLive: false
     }
-    
     setComparisonPlans(prev => [...prev, newPlan])
   }
   
@@ -873,133 +483,67 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   }
   
   const duplicatePlan = (id: string) => {
-    // Find the plan to duplicate
     const planToDuplicate = comparisonPlans.find(plan => plan.id === id)
     if (!planToDuplicate) return
-    
-    // Create new plan with duplicated values but new ID
-    const newPlan: ComparisonPlan = {
-      ...planToDuplicate,
-      id: generateId(),
-      name: `${planToDuplicate.name} (Copy)`
-    }
-    
-    // Add to comparison plans
+    const newPlan: ComparisonPlan = { ...planToDuplicate, id: generateId(), name: `${planToDuplicate.name} (Copy)` }
     setComparisonPlans(prev => [...prev, newPlan])
-    
-    // Auto-select the new plan
     setSelectedComparisonPlans(prev => [...prev, newPlan.id])
   }
   
   const togglePlanSelection = (id: string) => {
-    setSelectedComparisonPlans(prev => 
-      prev.includes(id) 
-        ? prev.filter(planId => planId !== id) 
-        : [...prev, id]
-    )
+    setSelectedComparisonPlans(prev => prev.includes(id) ? prev.filter(planId => planId !== id) : [...prev, id])
   }
   
   const updateComparisonPlan = (id: string, field: keyof ComparisonPlan, value: any) => {
-    setComparisonPlans(prev => 
-      prev.map(plan => plan.id === id ? { ...plan, [field]: value } : plan)
-    )
+    setComparisonPlans(prev => prev.map(plan => plan.id === id ? { ...plan, [field]: value } : plan))
   }
   
   const calculateComparisonSimulations = () => {
-    setIsComparingSimulations(true);
-    setComparisonError(null);
-    
+    setIsComparingSimulations(true)
+    setComparisonError(null)
     try {
-      // Create a copy of current inputs to restore later
-      const originalInputs = { ...inputs };
-      const simulations: ComparisonPlanSimulation[] = [];
-      
-      // Calculate simulations one by one for each selected plan
+      const originalInputs = { ...inputs }
+      const simulations: ComparisonPlanSimulation[] = []
       for (const planId of selectedComparisonPlans) {
-        const plan = comparisonPlans.find(p => p.id === planId);
-        if (!plan) continue;
-        
-        // Set inputs to the current plan values
-        const planInputs = {
+        const plan = comparisonPlans.find(p => p.id === planId)
+        if (!plan) continue
+        const planInputs: any = {
           evalPrice: plan.evalPrice,
           evalPassRate: plan.evalPassRate,
           simFundedRate: plan.simFundedRate,
           avgPayout: plan.avgPayout,
           useActivationFee: plan.useActivationFee,
           activationFee: plan.activationFee,
-          includeLive: plan.includeLive,
-          avgLiveSaved: plan.avgLiveSaved,
-          avgLivePayout: plan.avgLivePayout
-        };
-        
-        // Update inputs state with plan values
-        setInputs(planInputs);
-        
-        // Run simulation for this plan
-        const results = runSimulation();
-        
-        if (results) {
-          // Create a simulation object for this plan
-          simulations.push({
-            id: plan.id,
-            name: plan.name,
-            ...results
-          });
         }
+        setInputs(prev => ({ ...prev, ...planInputs }))
+        const results = runSimulation()
+        if (results) simulations.push({ id: plan.id, name: plan.name, ...results })
       }
-      
-      // Restore original inputs
-      setInputs(originalInputs);
-      
-      // Store the simulation results
-      setComparisonSimulations(simulations);
-      
-      // Re-run simulation with original inputs to restore main results
-      runSimulation();
-      
-      setIsComparingSimulations(false);
+      setInputs(originalInputs)
+      setComparisonSimulations(simulations)
+      runSimulation()
+      setIsComparingSimulations(false)
     } catch (err) {
-      console.error('Comparison simulation error:', err);
-      setComparisonError(err instanceof Error ? err.message : 'An error occurred during comparison');
-      setIsComparingSimulations(false);
+      console.error('Comparison simulation error:', err)
+      setComparisonError(err instanceof Error ? err.message : 'An error occurred during comparison')
+      setIsComparingSimulations(false)
     }
   }
   
-  // Context value (memoized to prevent unnecessary re-renders)
   const contextValue = useMemo(() => ({
-    // Inputs and simulation
-    inputs,
-    updateInput,
-    resetInputs,
-    isLoading,
-    error,
-    results,
-    runSimulation,
-    
-    // Chart visibility
-    visibleMargins,
-    toggleMargin,
-    
-    // Comparison mode
-    isComparisonMode,
-    comparisonPlans,
-    selectedComparisonPlans,
-    comparisonSimulations,
-    isComparingSimulations,
-    comparisonError,
-    toggleComparisonMode,
-    addComparisonPlan,
-    removeComparisonPlan,
-    duplicatePlan,
-    togglePlanSelection,
-    updateComparisonPlan,
+    inputs, updateInput, resetInputs,
+    isLoading, error, results, runSimulation,
+    visibleMargins, toggleMargin,
+    isComparisonMode, comparisonPlans, selectedComparisonPlans,
+    comparisonSimulations, isComparingSimulations, comparisonError,
+    toggleComparisonMode, addComparisonPlan, removeComparisonPlan,
+    duplicatePlan, togglePlanSelection, updateComparisonPlan,
     calculateComparisonSimulations,
-    chartMarginTarget,
-    setChartMarginTarget
+    chartMarginTarget, setChartMarginTarget
   }), [
-    inputs, isLoading, error, results, 
-    visibleMargins, 
-    isComparisonMode, comparisonPlans, selectedComparisonPlans, 
+    inputs, isLoading, error, results,
+    visibleMargins,
+    isComparisonMode, comparisonPlans, selectedComparisonPlans,
     comparisonSimulations, isComparingSimulations, comparisonError,
     chartMarginTarget
   ])
@@ -1011,16 +555,12 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   )
 }
 
-// Custom hook to use the simulation context
 export function useSimulationContext() {
   const context = useContext(SimulationContext)
-  if (!context) {
-    throw new Error('useSimulationContext must be used within SimulationProvider')
-  }
+  if (!context) throw new Error('useSimulationContext must be used within SimulationProvider')
   return context
-} 
+}
 
-// Alias hook export for convenience
 export function useSimulation() {
   return useSimulationContext()
 }

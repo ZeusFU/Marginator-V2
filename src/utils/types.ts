@@ -1,31 +1,22 @@
 // Types for margin calculation and simulation
 
 // Constants
-export const SAMPLE_SIZE = 1000;
 export const SIMULATION_STEPS = 100;
 
-// Basic types
+// Basic types — all dollar values are per-account
 export interface MarginCalculationResult {
   priceMargin: number;
-  revenueEval: number;
-  cost: number;
-  netRevenue: number;
-  // New Live account outputs
-  liveUserCount: number;
-  totalLiveRevenue: number;
-  effectiveAvgPayout: number;
-  savedAmountPerAccount: number;
-  totalSavedAmount: number;
   grossRevenue: number;
   evalRevenueFromEvals: number;
   activationFeeRevenue: number;
-  // Company cost breakdown
+  payoutCost: number;
   fixedCompanyCosts: number;
   processorCost: number;
   affiliateCost: number;
   liveAllocationCost: number;
   companyCostsTotal: number;
-  // Note: staffing cost moved into percentage and included inside companyCostsTotal
+  totalCost: number;
+  netRevenue: number;
 }
 
 export interface SimulationDataPoint {
@@ -93,12 +84,9 @@ export interface VisibleMarginsState {
   avgPayout: { priceMargin: boolean };
   payoutRate: { priceMargin: boolean };
   evalPriceRate: { priceMargin: boolean };
-  avgLivePayout: { priceMargin: boolean };
 }
 
-// Add type adapter for simulation data in chart components
 export interface ChartDataAdapter {
-  // Adapter function to convert SimulationResults.evaluationPriceData to SimulationData
   adaptEvalPriceData: (data: {
     values: number[];
     priceMargins: number[];
@@ -108,6 +96,4 @@ export interface ChartDataAdapter {
     totalRevenue: number[];
     totalNetRevenue: number[];
   }) => SimulationData;
-  
-  // Adapter for other data types as needed
-} 
+}

@@ -1,10 +1,10 @@
 import React, { useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import { Download } from 'lucide-react';
-import { VisibleMarginsState } from '../utils/types';
 import ChartTitle from '../components/ChartTitle';
 import { Chart } from 'chart.js';
 import { createChartOptions } from '../utils/chartConfig';
+import { useSimulationContext } from '../context/SimulationContext';
 
 interface PayoutRateChartProps {
   data: any;
@@ -22,59 +22,61 @@ function PayoutRateChart({
   comparisonData = []
 }: PayoutRateChartProps) {
   const chartRef = useRef<Chart | null>(null);
+  const { chartMarginTarget } = useSimulationContext();
   
-  // Chart options - using createChartOptions for consistency
+  // Chart options
   const baseOptions = createChartOptions(
     'Purchase to Payout Rate (%)',
     'linear',
-    null, // No threshold value for this chart type
+    null,
     (val) => `${(val*100).toFixed(0)}%`,
-    (val) => `${(val*100).toFixed(0)}%`
+    (val) => `${(val*100).toFixed(0)}%`,
+    chartMarginTarget
   );
   
-  // Custom options specific to this chart
   const chartOptions = {
     ...baseOptions,
     scales: {
       ...baseOptions.scales,
       y: {
         ...baseOptions.scales.y,
-        title: {
-          display: true,
-          text: 'Average Payout ($)',
-          color: '#EBF3FE'
-        },
-        ticks: {
-          color: '#EBF3FE',
-          callback: (val: number) => `$${val.toFixed(0)}`
-        },
-        // Remove the min/max since this chart doesn't show percentages
+        title: { display: true, text: 'Average Payout ($)', color: '#7C7F88' },
+        ticks: { color: '#7C7F88', callback: (val: number) => `$${val.toFixed(0)}` },
         min: undefined,
         max: undefined
+      }
+    },
+    plugins: {
+      ...baseOptions.plugins,
+      annotation: { annotations: {} }, // No horizontal margin line for combo charts
+      tooltip: {
+        ...baseOptions.plugins.tooltip,
+        callbacks: {
+          label: (context: any) => {
+            const label = context.dataset.label || '';
+            const x = context.parsed.x;
+            const y = context.parsed.y;
+            return `${label}: Rate ${(x*100).toFixed(1)}%, Payout $${y.toFixed(0)}`;
+          }
+        }
       }
     }
   };
   
-  // Handle download data
   const downloadData = () => {
     if (!chartRef.current) return;
-    
-    // Download logic here
     alert('Download functionality would go here');
   };
   
   // Prepare chart data
-  const chartData = {
-    datasets: []
-  };
+  const chartData: { datasets: any[] } = { datasets: [] };
   
-  // Check if data contains the combinationsPM points and add them
-  if (data && data.combinationsPM && Array.isArray(data.combinationsPM)) {
+  if (data && data.combinationsPM && Array.isArray(data.combinationsPM) && data.combinationsPM.length > 0) {
     chartData.datasets.push({
-      label: '50% Price Margin Combinations',
+      label: `${chartMarginTarget}% Margin Combinations`,
       data: data.combinationsPM,
-      borderColor: '#3A82F7',
-      backgroundColor: 'rgba(58, 130, 247, 0.3)',
+      borderColor: 'var(--accent, #4A7EC7)',
+      backgroundColor: 'rgba(107, 163, 224, 0.15)',
       tension: 0.1,
       pointRadius: 2,
       showLine: true,
@@ -82,19 +84,16 @@ function PayoutRateChart({
     });
   }
   
-  // Add comparison datasets if in comparison mode
   if (isComparisonMode && comparisonData && comparisonData.length > 0) {
     const colors = ['#FF5724', '#00C49F', '#FFBB28', '#9C27B0', '#FF9800'];
-    
     comparisonData.forEach((item, index) => {
-      if (item && item.data && item.data.combinationsPM) {
+      if (item?.data?.combinationsPM) {
         const color = colors[index % colors.length];
-        
         chartData.datasets.push({
-          label: `${item.name} - 50% Margin`,
+          label: `${item.name} - ${chartMarginTarget}% Margin`,
           data: item.data.combinationsPM,
           borderColor: color,
-          backgroundColor: `${color}33`, // Add transparency
+          backgroundColor: `${color}33`,
           tension: 0.1,
           pointRadius: 2,
           borderDash: [5, 5],
@@ -106,52 +105,45 @@ function PayoutRateChart({
   }
   
   return (
-    <div className="bg-surface pt-4 p-5 rounded-lg shadow-sm transition-all chart-container">
+    <div className="bg-card pt-4 p-5 rounded-xl border border-border shadow-soft transition-all chart-container">
       <ChartTitle 
-        title="Payout vs Rate for 50% Margin" 
+        title={`Payout vs Rate for ${chartMarginTarget}% Margin`}
         chartKey="payoutRate" 
-        toggleMargin={toggleMargin} 
+        toggleMargin={() => toggleMargin('priceMargin')} 
         visibleMargins={visibleMargins}
-        description="This chart shows combinations of payouts and rates that result in 50% price margin."
+        description={`Combinations of payout rates and average payouts that result in ${chartMarginTarget}% price margin.`}
       />
       
-      {/* Chart - no control buttons */}
       <div className="h-80 relative mb-4">
         {chartData.datasets.length > 0 ? (
           <Line 
             data={chartData} 
             options={chartOptions} 
-            ref={(chart) => {
-              if (chart) {
-                chartRef.current = chart;
-              }
-            }}
+            ref={(chart) => { if (chart) chartRef.current = chart; }}
           />
         ) : (
           <div className="h-full flex items-center justify-center text-text_secondary text-sm">
-            No data available for this chart. Adjust your simulation parameters or compare plans.
+            No data available. Adjust your simulation parameters.
           </div>
         )}
       </div>
       
-      {/* Key insights section */}
-      <div className="mt-4 p-4 bg-card/30 border border-border/50 rounded-lg">
+      <div className="mt-4 p-4 bg-surface/60 border border-border rounded-xl">
         <h4 className="text-sm font-medium mb-2 text-text_primary">Key Insights</h4>
-        <div className="text-sm text-gray-400 space-y-1">
+        <div className="text-sm text-text_secondary space-y-1">
           <p>
             This curve shows all combinations of Purchase to Payout Rate and Average Payout
-            that result in exactly 50% price margin.
+            that result in exactly {chartMarginTarget}% price margin.
           </p>
           <p>
-            Points below the curve have margins over 50%, points above have margins under 50%.
+            Points below the curve have margins over {chartMarginTarget}%, points above have margins under {chartMarginTarget}%.
           </p>
         </div>
       </div>
       
-      {/* Download button */}
       <button 
         onClick={downloadData} 
-        className="mt-4 px-4 py-2 bg-secondary text-background rounded hover:bg-opacity-80 flex items-center gap-2 text-sm font-medium"
+        className="mt-4 px-4 py-2 bg-secondary text-white rounded hover:bg-opacity-80 flex items-center gap-2 text-sm font-medium"
       >
         <Download className="w-4 h-4"/> Download Data
       </button>
@@ -159,4 +151,4 @@ function PayoutRateChart({
   );
 }
 
-export default PayoutRateChart; 
+export default PayoutRateChart;

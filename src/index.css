@@ -2,15 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Dark mode (default) */
 :root {
-  --background: #0E1117;
-  --surface: #121726;
-  --card: #1A1F2E;
-  --primary: #488BF8;
-  --secondary: #A3C1FA;
-  --text_primary: #F7FAFC;
-  --text_secondary: #A1A8B9;
-  --border: rgba(161, 168, 185, 0.1);
+  --background: #111318;
+  --surface: #1A1D25;
+  --surface-hover: #242730;
+  --card: #1F222B;
+  --primary: #5A8FD4;
+  --secondary: #C9A84C;
+  --accent: #6BA3E0;
+  --text_primary: #E8E6E1;
+  --text_secondary: #8B8E97;
+  --border: #2A2D36;
+  --muted: #6B6E77;
+  --shadow-soft: 0 1px 3px 0 rgba(0,0,0,0.2), 0 1px 2px -1px rgba(0,0,0,0.15);
+  --shadow-card: 0 2px 8px -2px rgba(0,0,0,0.25), 0 1px 3px -1px rgba(0,0,0,0.15);
+  --primary-10: rgba(90, 143, 212, 0.1);
+  --scrollbar-thumb: #3A3D46;
+  --scrollbar-hover: #50535C;
+}
+
+/* Light mode */
+[data-theme="light"] {
+  --background: #F7F6F3;
+  --surface: #EFECEA;
+  --surface-hover: #E6E3DE;
+  --card: #FFFFFF;
+  --primary: #1E3A5F;
+  --secondary: #C9A84C;
+  --accent: #4A7EC7;
+  --text_primary: #1A1D26;
+  --text_secondary: #7C7F88;
+  --border: #E0DDD7;
+  --muted: #A8A5A0;
+  --shadow-soft: 0 1px 3px 0 rgba(0,0,0,0.04), 0 1px 2px -1px rgba(0,0,0,0.03);
+  --shadow-card: 0 2px 8px -2px rgba(0,0,0,0.06), 0 1px 3px -1px rgba(0,0,0,0.04);
+  --primary-10: rgba(30, 58, 95, 0.08);
+  --scrollbar-thumb: #C8C5BF;
+  --scrollbar-hover: #A8A5A0;
 }
 
 body {
@@ -27,7 +56,7 @@ code {
     monospace;
 }
 
-/* Theme colors - to be used with Tailwind */
+/* Theme utility classes */
 .bg-background { background-color: var(--background); }
 .bg-surface { background-color: var(--surface); }
 .bg-card { background-color: var(--card); }
@@ -39,8 +68,10 @@ code {
 .bg-secondary { background-color: var(--secondary); }
 .border-primary { border-color: var(--primary); }
 .border-card { border-color: var(--card); }
-.bg-primary\/10 { background-color: rgba(72, 139, 248, 0.1); }
+.bg-primary\/10 { background-color: var(--primary-10); }
 .border-border { border-color: var(--border); }
+.shadow-soft { box-shadow: var(--shadow-soft); }
+.shadow-card { box-shadow: var(--shadow-card); }
 
 /* Dashboard specific styles */
 .dashboard-container {
@@ -54,7 +85,8 @@ code {
 
 /* Chart tooltip styles */
 .custom-tooltip {
-  @apply bg-surface text-text_primary px-2 py-1 text-xs rounded shadow-lg border border-border;
+  @apply bg-card text-text_primary px-2 py-1 text-xs rounded-lg border border-border;
+  box-shadow: var(--shadow-card);
 }
 
 /* Animation for toast notifications */
@@ -76,23 +108,29 @@ code {
   animation: fadeOut 0.3s ease-in-out forwards;
 }
 
-/* Interactive hover states for charts and buttons */
+/* Interactive hover states */
 .chart-container {
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  transition: box-shadow 0.2s ease-in-out;
 }
 
 .chart-container:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-card);
 }
 
-/* Improved focus styles for better interaction feedback */
-button:focus-visible, 
-input:focus-visible {
-  @apply outline-none ring-2 ring-primary ring-opacity-50;
+/* Improved focus styles */
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
-/* Add transitions for smoother interactions */
+input:focus,
+select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
+  border-color: var(--accent);
+}
+
+/* Transitions */
 .transition-all {
   transition-property: all;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -109,24 +147,23 @@ input:focus-visible {
   z-index: 20;
 }
 
-/* Enhanced scrollbar styling */
+/* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1f2937;
-  border-radius: 4px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4b5563;
-  border-radius: 4px;
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: var(--scrollbar-hover);
 }
 
 /* Chart legend styles */
@@ -156,4 +193,39 @@ input:focus-visible {
   height: 12px;
   border-radius: 50%;
   margin-right: 4px;
+}
+
+/* Toast styling */
+.toast {
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+/* Theme transition */
+body, .bg-background, .bg-surface, .bg-card, .bg-primary {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Safe area for bottom nav on notched phones */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Mobile drawer slide-in */
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-left {
+  animation: slideInLeft 0.25s ease-out;
+}
+
+/* Hide scrollbar for horizontal pill strips */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

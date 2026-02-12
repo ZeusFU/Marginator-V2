@@ -38,7 +38,7 @@ export function Modal({ title, onClose, children }: ModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div 
         ref={modalRef}
-        className="bg-surface rounded-lg shadow-lg max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+        className="bg-card rounded-2xl shadow-card border border-border max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h2 className="text-lg font-semibold">{title}</h2>

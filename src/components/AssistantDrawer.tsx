@@ -45,9 +45,6 @@ export default function AssistantDrawer(props: AssistantDrawerProps) {
       useActivationFee: !!inputs.useActivationFee,
       activationFee: toNum(inputs.activationFee, 200),
       evalPassRate,
-      avgLiveSaved: 0,
-      avgLivePayout: 0,
-      includeLive: false,
       userFeePerAccount: toNum(inputs.userFeePerAccount, 5.83),
       dataFeePerAccount: toNum(inputs.dataFeePerAccount, 2.073),
       accountFeePerAccount: toNum(inputs.accountFeePerAccount, 3.5),
@@ -71,9 +68,6 @@ export default function AssistantDrawer(props: AssistantDrawerProps) {
       parsedInputs.useActivationFee,
       parsedInputs.activationFee,
       parsedInputs.evalPassRate,
-      0,
-      0,
-      false,
       parsedInputs.userFeePerAccount,
       parsedInputs.dataFeePerAccount,
       parsedInputs.accountFeePerAccount,
@@ -83,7 +77,7 @@ export default function AssistantDrawer(props: AssistantDrawerProps) {
       parsedInputs.liveAllocationPercent,
       parsedInputs.affiliateAppliesToActivation
     )
-    return `Current margin ${formatPercent(res.priceMargin)} | Gross ${res.grossRevenue.toFixed(2)} | Cost ${res.cost.toFixed(2)} | Net ${res.netRevenue.toFixed(2)}`
+    return `Current margin ${formatPercent(res.priceMargin)} | Gross ${res.grossRevenue.toFixed(2)} | Cost ${res.totalCost.toFixed(2)} | Net ${res.netRevenue.toFixed(2)}`
   }
 
   async function handleCommand(raw: string) {
@@ -193,17 +187,17 @@ export default function AssistantDrawer(props: AssistantDrawerProps) {
         onClick={onClose}
       />
       {/* Drawer */}
-      <div className={`absolute right-0 top-0 h-full w-full max-w-md bg-card border-l border-border shadow-xl transform transition-transform ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <div className={`absolute right-0 top-0 h-full w-full max-w-md bg-card border-l border-border shadow-card transform transition-transform ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h3 className="text-sm font-medium text-text_secondary">AI Assistant</h3>
-          <button className="text-text_secondary hover:text-primary" onClick={onClose}>Close</button>
+          <button className="text-text_secondary hover:text-primary text-sm transition-colors" onClick={onClose}>Close</button>
         </div>
         <div className="p-4 h-[calc(100%-7rem)] overflow-y-auto space-y-3">
           {messages.length === 0 && (
             <div className="text-text_secondary text-sm">Ask me to change inputs, axes, ranges, or target margin. Example: "set eval price to 120", "target 45", "x range 0-10".</div>
           )}
           {messages.map((m, i) => (
-            <div key={i} className={`p-3 rounded-lg ${m.role === 'user' ? 'bg-background/60' : 'bg-background/80 border border-border'}`}>
+            <div key={i} className={`p-3 rounded-xl ${m.role === 'user' ? 'bg-surface' : 'bg-surface/50 border border-border'}`}>
               <div className="text-xs text-text_secondary mb-1">{m.role === 'user' ? 'You' : 'Assistant'}</div>
               <div className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</div>
             </div>
@@ -214,12 +208,12 @@ export default function AssistantDrawer(props: AssistantDrawerProps) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && text.trim()) handleCommand(text) }}
-            className="flex-1 p-2 rounded-md bg-white text-gray-900 border border-gray-300 dark:bg-neutral-900 dark:text-gray-100 dark:border-neutral-700"
+            className="flex-1 p-2 rounded-lg bg-card text-text_primary border border-border transition-colors"
             placeholder="Type a request and press Enter"
           />
           <button
             onClick={() => text.trim() && handleCommand(text)}
-            className="px-3 py-2 rounded-md bg-blue-600 text-white text-sm"
+            className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors"
           >Send</button>
         </div>
       </div>

@@ -18,12 +18,6 @@ interface SidebarProps {
   setUseActivationFee: (value: boolean) => void;
   activationFee: number | string;
   setActivationFee: (value: number | string) => void;
-  avgLiveSaved: number | string;
-  setAvgLiveSaved: (value: number | string) => void;
-  avgLivePayout: number | string;
-  setAvgLivePayout: (value: number | string) => void;
-  includeLive: boolean;
-  setIncludeLive: (value: boolean) => void;
   isDisabled?: boolean;
 }
 
@@ -159,7 +153,7 @@ function Sidebar({
       {!inline && (
       <button 
         onClick={() => setIsSidebarOpen(false)} 
-        className="absolute top-2 right-2 lg:hidden p-1 text-text_secondary hover:text-text_primary"
+        className="absolute top-2 right-2 lg:hidden p-1 text-text_secondary hover:text-text_primary transition-colors"
         aria-label="Close parameters menu"
       >
         <X className="w-5 h-5" />
@@ -194,7 +188,6 @@ function Sidebar({
               <InputField label="Processor Fee" id="processorFeePercent" value={inputs.processorFeePercent} onChange={(v) => updateInput('processorFeePercent', v)} min={0} max={100} step={0.01} unit="%" placeholder="Defaults to 5.25%" tooltip="Percentage of gross revenue (eval + activation) paid to processors" disabled={isDisabled} />
               <InputField label="Affiliate Fee" id="affiliateFeePercent" value={inputs.affiliateFeePercent} onChange={(v) => updateInput('affiliateFeePercent', v)} min={0} max={100} step={0.01} unit="%" placeholder="Defaults to 3%" tooltip="Percentage applied to eval revenue (and optionally activation) for affiliates" disabled={isDisabled} />
               <InputField label="Live Allocation" id="liveAllocationPercent" value={inputs.liveAllocationPercent} onChange={(v) => updateInput('liveAllocationPercent', v)} min={0} max={100} step={0.01} unit="%" placeholder="Defaults to 2%" tooltip="Percentage of gross revenue reserved for live allocation" disabled={isDisabled} />
-              <InputField label="Live Allocation" id="liveAllocationPercent" value={inputs.liveAllocationPercent} onChange={(v) => updateInput('liveAllocationPercent', v)} min={0} max={100} step={0.01} unit="%" placeholder="Defaults to 2%" tooltip="Percentage of gross revenue reserved for live allocation" disabled={isDisabled} />
               <div className="flex items-center justify-between">
                 <label htmlFor="affiliateAppliesToActivation" className="text-xs font-medium text-text_secondary">Apply Affiliate Fee to Activation Revenue</label>
                 <button id="affiliateAppliesToActivation" onClick={() => updateInput('affiliateAppliesToActivation', !inputs.affiliateAppliesToActivation)} className={`px-2 py-1 rounded text-xs ${inputs.affiliateAppliesToActivation ? 'bg-primary text-white' : 'bg-card text-text_secondary'}`}>{inputs.affiliateAppliesToActivation ? 'On' : 'Off'}</button>
@@ -216,19 +209,6 @@ function Sidebar({
             </ToggleableSection>
           </div>
 
-          <div>
-            <ToggleableSection 
-              title="Live Accounts" 
-              isEnabled={inputs.includeLive}
-              onToggle={() => updateInput('includeLive', !inputs.includeLive)}
-              tooltip="Include revenue from live accounts that continue trading after funded phase"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <InputField label="% Live Accounts Saved" id="avgLiveSaved" value={inputs.avgLiveSaved} onChange={(v) => updateInput('avgLiveSaved', v)} min={0} max={100} step={0.1} unit="%" placeholder="% continuing to live phase" tooltip="Percentage of funded accounts that continue to live phase" disabled={isDisabled} />
-                <InputField label="Avg. Live Payout" id="avgLivePayout" value={inputs.avgLivePayout} onChange={(v) => updateInput('avgLivePayout', v)} min={0} step={10} unit="$" placeholder="Average live account payout" tooltip="Average payout for live account traders" disabled={isDisabled} />
-              </div>
-            </ToggleableSection>
-          </div>
         </div>
       ) : (
         <>
