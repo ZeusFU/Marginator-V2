@@ -20,8 +20,8 @@ export function calculateMargins(
   // Staffing cost is now a percentage of pre-live gross revenue
   staffingFeePercent: number = 3.5,
   processorFeePercent: number = 5.25,
-  affiliateFeePercent: number = 7.5,
-  liveAllocationPercent: number = 4,
+  affiliateFeePercent: number = 3,
+  liveAllocationPercent: number = 2,
   affiliateAppliesToActivation: boolean = false
 ): MarginCalculationResult {
   // Input validation
@@ -263,8 +263,8 @@ export function find50PercentMarginValue(
   accountFeePerAccount: number = 3.5,
   staffingFeePercent: number = 3.5,
   processorFeePercent: number = 5.25,
-  affiliateFeePercent: number = 7.5,
-  liveAllocationPercent: number = 4,
+  affiliateFeePercent: number = 3,
+  liveAllocationPercent: number = 2,
   affiliateAppliesToActivation: boolean = false
 ): number | null {
   const getMargin = (value: number) => {

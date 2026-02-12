@@ -213,7 +213,7 @@ export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70,
                 max={100}
                 step={0.01}
                 unit="%"
-                placeholder="7.5"
+                placeholder="3"
               />
               <InputField
                 label="Live Allocation %"
@@ -224,7 +224,7 @@ export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70,
                 max={100}
                 step={0.01}
                 unit="%"
-                placeholder="4"
+                placeholder="2"
               />
             </div>
           )}

@@ -280,8 +280,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       const accountFeePerAccount = inputs.accountFeePerAccount === '' ? 3.5 : toNumber(inputs.accountFeePerAccount)
       const staffingFeePercent = inputs.staffingFeePercent === '' ? 3.5 : toNumber(inputs.staffingFeePercent)
       const processorFeePercent = inputs.processorFeePercent === '' ? 5.25 : toNumber(inputs.processorFeePercent)
-      const affiliateFeePercent = inputs.affiliateFeePercent === '' ? 7.5 : toNumber(inputs.affiliateFeePercent)
-      const liveAllocationPercent = inputs.liveAllocationPercent === '' ? 4 : toNumber(inputs.liveAllocationPercent)
+      const affiliateFeePercent = inputs.affiliateFeePercent === '' ? 3 : toNumber(inputs.affiliateFeePercent)
+      const liveAllocationPercent = inputs.liveAllocationPercent === '' ? 2 : toNumber(inputs.liveAllocationPercent)
       const affiliateAppliesToActivation = !!inputs.affiliateAppliesToActivation
       
       // Ensure key inputs are valid

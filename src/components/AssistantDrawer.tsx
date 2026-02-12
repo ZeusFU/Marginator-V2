@@ -53,8 +53,8 @@ export default function AssistantDrawer(props: AssistantDrawerProps) {
       accountFeePerAccount: toNum(inputs.accountFeePerAccount, 3.5),
       staffingFeePercent: toNum(inputs.staffingFeePercent, 3.5),
       processorFeePercent: toNum(inputs.processorFeePercent, 5.25),
-      affiliateFeePercent: toNum(inputs.affiliateFeePercent, 7.5),
-      liveAllocationPercent: toNum(inputs.liveAllocationPercent, 4),
+      affiliateFeePercent: toNum(inputs.affiliateFeePercent, 3),
+      liveAllocationPercent: toNum(inputs.liveAllocationPercent, 2),
       affiliateAppliesToActivation: !!inputs.affiliateAppliesToActivation
     }
   }, [inputs])
