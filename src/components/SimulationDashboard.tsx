@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Copy as CopyIcon, Check } from 'lucide-react'
+import { Copy as CopyIcon, Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { useSimulationContext } from '../context/SimulationContext'
 import { MarginCalculationResult, ExactThresholdItem } from '../utils/types'
 import ComparisonPlanCard from './ComparisonPlanCard'
@@ -132,6 +132,10 @@ export function SimulationDashboard({ onSaveScenario }: SimulationDashboardProps
             </button>
           )}
           <div className="text-right pl-4 border-l border-white/20">
+            <span className="text-[10px] uppercase tracking-wide text-white/60">Cost / Acct</span>
+            <div className="text-lg font-semibold text-white/80">{fmt(m.totalCost)}</div>
+          </div>
+          <div className="text-right pl-4 border-l border-white/20">
             <span className="text-[10px] uppercase tracking-wide text-white/60">Net / Acct</span>
             <div className="text-lg font-semibold">{fmt(m.netRevenue)}</div>
           </div>
@@ -153,6 +157,7 @@ export function SimulationDashboard({ onSaveScenario }: SimulationDashboardProps
           <SubRow label="Affiliate" value={fmt(m.affiliateCost)} />
           <SubRow label="Live Alloc." value={fmt(m.liveAllocationCost)} />
           <Divider />
+          <Row label="Total Cost" value={fmt(m.totalCost)} negative />
           <Row label="Net Revenue" value={fmt(m.netRevenue)} positive />
         </div>
 
@@ -207,8 +212,9 @@ function Divider() {
 /* ── Thresholds Panel ── */
 
 function ThresholdsPanel({ results }: { results: any }) {
-  const { chartMarginTarget, setChartMarginTarget, runSimulation } = useSimulationContext()
+  const { chartMarginTarget, setChartMarginTarget, runSimulation, inputs } = useSimulationContext()
   const [targetStr, setTargetStr] = useState<string>(String(chartMarginTarget))
+  const [ptrExpanded, setPtrExpanded] = useState(false)
 
   const target = useMemo(() => {
     const n = parseFloat(targetStr)
@@ -239,6 +245,26 @@ function ThresholdsPanel({ results }: { results: any }) {
     }
     return { evalPrice, ptr, avgPayout }
   }, [results?.evaluationPriceData, results?.purchaseToPayoutRateData, results?.averagePayoutData, target])
+
+  // Compute what Eval→Funded or Funded→Payout needs to be to hit the target PTR
+  const ptrBreakdown = useMemo(() => {
+    if (thresholds.ptr === null) return null
+    const currentEvalPassRate = Number(inputs?.evalPassRate || 0) / 100 // as decimal
+    const currentSimFundedRate = Number(inputs?.simFundedRate || 0) / 100 // as decimal
+    const targetPtr = thresholds.ptr // already a decimal (e.g. 0.05)
+
+    // If we keep Eval→Funded the same, what does Funded→Payout need to be?
+    const neededFundedPayout = currentEvalPassRate > 0 ? targetPtr / currentEvalPassRate : null
+    // If we keep Funded→Payout the same, what does Eval→Funded need to be?
+    const neededEvalFunded = currentSimFundedRate > 0 ? targetPtr / currentSimFundedRate : null
+
+    return {
+      neededFundedPayout: neededFundedPayout !== null && neededFundedPayout <= 1 ? neededFundedPayout : null,
+      neededEvalFunded: neededEvalFunded !== null && neededEvalFunded <= 1 ? neededEvalFunded : null,
+      currentEvalPassRate,
+      currentSimFundedRate,
+    }
+  }, [thresholds.ptr, inputs?.evalPassRate, inputs?.simFundedRate])
 
   const [copiedAll, setCopiedAll] = useState(false)
   const copyAll = () => {
@@ -286,7 +312,39 @@ function ThresholdsPanel({ results }: { results: any }) {
       </div>
       <div className="grid grid-cols-3 gap-3">
         <ThresholdCell label="Eval Price" value={display(thresholds.evalPrice, false)} />
-        <ThresholdCell label="Purchase to Payout" value={display(thresholds.ptr, true)} />
+
+        {/* PTR cell with expandable breakdown */}
+        <div>
+          <span className="block text-[10px] text-text_secondary">Purchase to Payout</span>
+          <div className="flex items-center gap-1">
+            <span className="font-medium tabular-nums">{display(thresholds.ptr, true)}</span>
+            {thresholds.ptr !== null && (
+              <button
+                onClick={() => setPtrExpanded(!ptrExpanded)}
+                className="p-0.5 rounded text-text_secondary hover:text-text_primary transition-colors"
+              >
+                {ptrExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+            )}
+          </div>
+          {ptrExpanded && ptrBreakdown && (
+            <div className="mt-1 space-y-0.5 text-[10px]">
+              {ptrBreakdown.neededEvalFunded !== null && (
+                <div className="flex justify-between text-text_secondary">
+                  <span>Eval→Funded <span className="text-text_secondary/50">(@{(ptrBreakdown.currentSimFundedRate * 100).toFixed(1)}% F→P)</span></span>
+                  <span className="font-medium tabular-nums text-text_primary">{(ptrBreakdown.neededEvalFunded * 100).toFixed(2)}%</span>
+                </div>
+              )}
+              {ptrBreakdown.neededFundedPayout !== null && (
+                <div className="flex justify-between text-text_secondary">
+                  <span>Funded→Payout <span className="text-text_secondary/50">(@{(ptrBreakdown.currentEvalPassRate * 100).toFixed(1)}% E→F)</span></span>
+                  <span className="font-medium tabular-nums text-text_primary">{(ptrBreakdown.neededFundedPayout * 100).toFixed(2)}%</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <ThresholdCell label="Avg Payout" value={display(thresholds.avgPayout, false)} />
       </div>
     </div>
