@@ -23,7 +23,7 @@ import { ChartTabs } from './components/ChartTabs'
 import { Toast } from './components/Toast'
 import SimulationDashboard, { ScenarioSnapshot } from './components/SimulationDashboard'
 import { VariablesPopover } from './components/VariablesPopover'
-import { Settings as SettingsIcon } from 'lucide-react'
+import { Settings as SettingsIcon, Pencil, Copy, X, Check } from 'lucide-react'
 import EvalPriceChart from './charts/EvalPriceChart'
 import PtrChart from './charts/PtrChart'
 import AvgPayoutChart from './charts/AvgPayoutChart'
@@ -145,6 +145,7 @@ function ChartClosestResults({ activeTab, results }: { activeTab: number; result
 function AppContent() {
   const {
     inputs,
+    updateInput,
     isLoading,
     error,
     results,
@@ -162,6 +163,9 @@ function AppContent() {
     type: 'success'
   })
   const [savedScenarios, setSavedScenarios] = useState<Array<ScenarioSnapshot & { id: string; createdAt: number }>>([])
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   const [isVariablesOpen, setIsVariablesOpen] = useState(false)
   const [popoverPosition, setPopoverPosition] = useState({ top: 50, left: 0, caret: 24 })
   const pageRef = useRef<HTMLDivElement>(null)
@@ -213,16 +217,107 @@ function AppContent() {
     setShowToast({ visible: true, message, type })
   }
   const handleScenarioSave = (snapshot: ScenarioSnapshot) => {
+    const newId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setSavedScenarios(prev => [
       ...prev,
-      { ...snapshot, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, createdAt: Date.now() }
+      { ...snapshot, id: newId, createdAt: Date.now() }
     ])
-    displayToast('Scenario saved for comparison')
+    setSelectedScenarioId(newId)
+    displayToast('Scenario saved & selected')
   }
 
   const handleRemoveScenario = (id: string) => {
     setSavedScenarios(prev => prev.filter(item => item.id !== id))
+    if (selectedScenarioId === id) setSelectedScenarioId(null)
   }
+
+  const handleStartRename = (id: string) => {
+    const scenario = savedScenarios.find(s => s.id === id)
+    if (!scenario) return
+    setRenamingId(id)
+    setRenameValue(scenario.name)
+  }
+
+  const handleConfirmRename = () => {
+    if (!renamingId || !renameValue.trim()) return
+    setSavedScenarios(prev => prev.map(s => s.id === renamingId ? { ...s, name: renameValue.trim() } : s))
+    setRenamingId(null)
+    setRenameValue('')
+  }
+
+  const handleCancelRename = () => {
+    setRenamingId(null)
+    setRenameValue('')
+  }
+
+  const handleDuplicateScenario = (id: string) => {
+    const scenario = savedScenarios.find(s => s.id === id)
+    if (!scenario) return
+    const newId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const copy = {
+      ...scenario,
+      id: newId,
+      name: `${scenario.name} (Copy)`,
+      createdAt: Date.now()
+    }
+    setSavedScenarios(prev => [...prev, copy])
+    setSelectedScenarioId(newId)
+    displayToast('Scenario duplicated & selected')
+  }
+
+  // Track when we're loading a card's values so the sync effect doesn't
+  // overwrite the card with stale data from the previous simulation.
+  const suppressSyncRef = useRef(false)
+  const [pendingRun, setPendingRun] = useState(0)
+
+  const handleSelectScenario = (id: string) => {
+    if (selectedScenarioId === id) {
+      setSelectedScenarioId(null)
+      return
+    }
+    const scenario = savedScenarios.find(s => s.id === id)
+    if (!scenario) return
+
+    suppressSyncRef.current = true
+    setSelectedScenarioId(id)
+
+    // Populate variables from the card's saved data
+    updateInput('evalPrice', scenario.price)
+    updateInput('evalPassRate', scenario.passRate)
+    updateInput('simFundedRate', scenario.payoutRate)
+    updateInput('avgPayout', scenario.avgPayout)
+
+    // Signal that we need to run simulation after state flushes
+    setPendingRun(c => c + 1)
+  }
+
+  // Run simulation after React has flushed the input state updates
+  useEffect(() => {
+    if (pendingRun === 0) return
+    runSimulation()
+    // Re-enable sync after this simulation's results arrive
+    const timer = setTimeout(() => { suppressSyncRef.current = false }, 100)
+    return () => clearTimeout(timer)
+  }, [pendingRun])
+
+  // Sync variable changes back to the selected scenario card
+  // (only when the user actively changes variables, not during card selection)
+  useEffect(() => {
+    if (!selectedScenarioId || !results || suppressSyncRef.current) return
+    const m = results.baseMargins
+    if (!m) return
+    setSavedScenarios(prev => prev.map(s => {
+      if (s.id !== selectedScenarioId) return s
+      return {
+        ...s,
+        price: Number(inputs.evalPrice),
+        passRate: Number(inputs.evalPassRate),
+        payoutRate: Number(inputs.simFundedRate),
+        avgPayout: Number(inputs.avgPayout),
+        margin: m.priceMargin ?? s.margin
+      }
+    }))
+  }, [results, selectedScenarioId])
 
   const formatCurrencyDisplay = (value: number) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
   const formatPercentDisplay = (value: number) => `${value.toFixed(2)}%`
@@ -262,11 +357,6 @@ function AppContent() {
       const simulationResults = runSimulation()
       if (simulationResults) {
         displayToast('Simulation completed successfully')
-        if (activeCategory === 'margins') {
-          // stay on margins
-        } else {
-          setActiveCategory('charts')
-        }
       } else if (error) {
         displayToast(error, 'error')
       }
@@ -366,7 +456,14 @@ function AppContent() {
                 {error}
               </div>
             ) : results ? (
-              <SimulationDashboard onSaveScenario={handleScenarioSave} />
+              <SimulationDashboard
+                onSaveScenario={handleScenarioSave}
+                onDuplicateScenario={handleDuplicateScenario}
+                planCount={savedScenarios.length}
+                savedScenarios={savedScenarios}
+                selectedScenarioId={selectedScenarioId}
+                onSelectScenario={handleSelectScenario}
+              />
             ) : (
               <div className="flex flex-col items-center justify-center h-64 text-text_secondary">
                 <p className="text-sm mb-1">Configure your variables and run a simulation.</p>
@@ -416,7 +513,14 @@ function AppContent() {
           <div className="thresholds-container p-4 bg-card rounded-xl shadow-card border border-border">
             {results ? (
               <>
-                <SimulationDashboard onSaveScenario={handleScenarioSave} />
+                <SimulationDashboard
+                  onSaveScenario={handleScenarioSave}
+                  onDuplicateScenario={handleDuplicateScenario}
+                  planCount={savedScenarios.length}
+                  savedScenarios={savedScenarios}
+                  selectedScenarioId={selectedScenarioId}
+                  onSelectScenario={handleSelectScenario}
+                />
                 <ThresholdsTable 
                   thresholds={results.exactThresholds}
                   evalPrice={inputs.evalPrice}
@@ -439,9 +543,9 @@ function AppContent() {
         )
       case 'compare':
         return (
-          <div className="bg-card rounded-xl shadow-card border border-border p-4">
+          <div>
             {savedScenarios.length === 0 ? (
-              <div className="text-center text-text_secondary py-8 text-sm">
+              <div className="text-center text-text_secondary py-8 text-sm bg-card rounded-xl shadow-card border border-border">
                 Save scenarios from the Margins tab to compare them here.
               </div>
             ) : (
@@ -451,19 +555,82 @@ function AppContent() {
                 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
               }`}>
                 {savedScenarios.map((scenario) => {
+                  const isSelected = selectedScenarioId === scenario.id
                   const barColor = scenario.margin >= 0.5 ? 'bg-[#1E3A5F]' : scenario.margin >= 0.3 ? 'bg-[#2A5080]' : 'bg-[#4A7EC7]'
                   return (
-                    <div key={scenario.id} className={`${barColor} text-white rounded-xl px-4 py-3`}>
-                      {/* Header: name + remove */}
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-medium text-white/60 uppercase tracking-wide">{scenario.name}</span>
-                        <button
-                          onClick={() => handleRemoveScenario(scenario.id)}
-                          className="p-1 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors leading-none"
-                          title="Remove"
-                        >
-                          <span className="text-[10px]">✕</span>
-                        </button>
+                    <div
+                      key={scenario.id}
+                      onClick={() => handleSelectScenario(scenario.id)}
+                      className={`${barColor} text-white rounded-xl px-4 py-3 cursor-pointer transition-all ${
+                        isSelected ? 'ring-2 ring-white/70 shadow-lg scale-[1.02]' : 'hover:brightness-110'
+                      }`}
+                    >
+                      {/* Header: name + actions */}
+                      <div className="flex items-center justify-between mb-1" onClick={(e) => e.stopPropagation()}>
+                        {renamingId === scenario.id ? (
+                          <>
+                            <input
+                              autoFocus
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleConfirmRename()
+                                if (e.key === 'Escape') handleCancelRename()
+                              }}
+                              className="flex-1 min-w-0 bg-white/15 text-white text-[11px] font-medium rounded px-2 py-0.5 outline-none placeholder:text-white/30 border border-white/20 focus:border-white/50"
+                              placeholder="Scenario name"
+                            />
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button
+                                onClick={handleConfirmRename}
+                                className="p-1 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors"
+                                title="Confirm"
+                              >
+                                <Check className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={handleCancelRename}
+                                className="p-1 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors"
+                                title="Cancel"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <span
+                              className="text-[10px] font-medium text-white/60 uppercase tracking-wide truncate mr-2"
+                              onDoubleClick={() => handleStartRename(scenario.id)}
+                            >
+                              {scenario.name}
+                              {isSelected && <span className="ml-1.5 text-white/40">· selected</span>}
+                            </span>
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button
+                                onClick={() => handleStartRename(scenario.id)}
+                                className="p-1 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors"
+                                title="Rename"
+                              >
+                                <Pencil className="w-2.5 h-2.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDuplicateScenario(scenario.id)}
+                                className="p-1 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors"
+                                title="Duplicate"
+                              >
+                                <Copy className="w-2.5 h-2.5" />
+                              </button>
+                              <button
+                                onClick={() => handleRemoveScenario(scenario.id)}
+                                className="p-1 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors"
+                                title="Remove"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
                       {/* Margin */}
                       <div className="text-2xl font-bold leading-tight mb-2">{formatPercentDisplay(scenario.margin * 100)}</div>

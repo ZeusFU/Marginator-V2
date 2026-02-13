@@ -17,7 +17,12 @@ export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70,
   const { isDark, toggleTheme } = useTheme()
   const [showCompanyCosts, setShowCompanyCosts] = useState(false)
 
-  if (!isOpen) return null
+  if (!isOpen) return <div ref={popoverRef} />
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); onRun(); onClose() }
+    if (e.key === 'Escape') { e.preventDefault(); onClose() }
+  }
 
   // Shared form content used in both mobile drawer and desktop popover
   const formContent = (
@@ -90,7 +95,7 @@ export function VariablesPopover({ isOpen, onClose, onRun, position = { top: 70,
   )
 
   return (
-    <div ref={popoverRef}>
+    <div ref={popoverRef} onKeyDown={handleKeyDown}>
       {/* ── Mobile: full-screen drawer ── */}
       <div className="md:hidden fixed inset-0 z-50">
         {/* Backdrop */}

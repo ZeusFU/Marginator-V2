@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Copy as CopyIcon, Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { Copy as CopyIcon, Check, ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { useSimulationContext } from '../context/SimulationContext'
 import { MarginCalculationResult, ExactThresholdItem } from '../utils/types'
 import ComparisonPlanCard from './ComparisonPlanCard'
@@ -13,11 +13,21 @@ export interface ScenarioSnapshot {
   avgPayout: number
 }
 
-interface SimulationDashboardProps {
-  onSaveScenario?: (snapshot: ScenarioSnapshot) => void
+interface SavedScenario extends ScenarioSnapshot {
+  id: string
+  createdAt: number
 }
 
-export function SimulationDashboard({ onSaveScenario }: SimulationDashboardProps) {
+interface SimulationDashboardProps {
+  onSaveScenario?: (snapshot: ScenarioSnapshot) => void
+  onDuplicateScenario?: (id: string) => void
+  planCount?: number
+  savedScenarios?: SavedScenario[]
+  selectedScenarioId?: string | null
+  onSelectScenario?: (id: string) => void
+}
+
+export function SimulationDashboard({ onSaveScenario, onDuplicateScenario, planCount = 0, savedScenarios = [], selectedScenarioId, onSelectScenario }: SimulationDashboardProps) {
   const { 
     results, 
     inputs, 
@@ -83,11 +93,24 @@ export function SimulationDashboard({ onSaveScenario }: SimulationDashboardProps
     setTimeout(() => setCopied(false), 1200)
   }
 
-  const handleSave = () => {
-    if (!onSaveScenario) return
-    const name = window.prompt('Name this scenario', `Scenario ${new Date().toLocaleTimeString()}`)
-    if (!name) return
-    onSaveScenario({ name: name.trim(), margin: m.priceMargin, price: inp.evalPrice, passRate: inp.evalPassRate, payoutRate: inp.simFundedRate, avgPayout: inp.avgPayout })
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveName, setSaveName] = useState('')
+
+  const handleSaveStart = () => {
+    setSaveName(`Plan ${planCount + 1}`)
+    setIsSaving(true)
+  }
+
+  const handleSaveConfirm = () => {
+    if (!onSaveScenario || !saveName.trim()) return
+    onSaveScenario({ name: saveName.trim(), margin: m.priceMargin, price: inp.evalPrice, passRate: inp.evalPassRate, payoutRate: inp.simFundedRate, avgPayout: inp.avgPayout })
+    setIsSaving(false)
+    setSaveName('')
+  }
+
+  const handleSaveCancel = () => {
+    setIsSaving(false)
+    setSaveName('')
   }
 
   // Margin color for the hero bar
@@ -110,37 +133,150 @@ export function SimulationDashboard({ onSaveScenario }: SimulationDashboardProps
   }
   
   // ── Single plan view — compact & minimal ──
+  const selectedScenario = savedScenarios.find(s => s.id === selectedScenarioId)
+  const [planDropdownOpen, setPlanDropdownOpen] = useState(false)
+
   return (
     <div className="space-y-4">
-      {/* Hero margin bar */}
-      <div className={`${barColor} text-white rounded-xl px-5 py-4 flex items-center justify-between`}>
-        <div>
-          <span className="text-xs font-medium text-white/70 uppercase tracking-wide">Margin</span>
-          <div className="text-3xl font-bold leading-tight">{pct(m.priceMargin)}</div>
-        </div>
-        <div className="flex items-center gap-3">
+      {/* Plan selector */}
+      {onSaveScenario && (
+        <div className="relative">
           <button
-            onClick={handleCopy}
-            className={`p-2 rounded-md bg-white/10 hover:bg-white/20 transition-colors ${copied ? 'text-green-300' : 'text-white'}`}
-            title="Copy summary"
+            onClick={() => setPlanDropdownOpen(!planDropdownOpen)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#1E3A5F]/10 border border-[#1E3A5F]/20 hover:bg-[#1E3A5F]/20 text-xs transition-colors"
           >
-            {copied ? <Check className="w-4 h-4" /> : <CopyIcon className="w-4 h-4" />}
+            <span className={`font-medium ${selectedScenario ? 'text-text_primary' : 'text-text_secondary'}`}>
+              {selectedScenario ? selectedScenario.name : 'No plan selected'}
+            </span>
+            <ChevronDown className={`w-3 h-3 text-text_secondary transition-transform ${planDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
-          {onSaveScenario && (
-            <button onClick={handleSave} className="px-3 py-1.5 rounded-md bg-white/15 hover:bg-white/25 text-sm font-medium text-white transition-colors">
-              Save
-            </button>
+
+          {planDropdownOpen && (
+            <div className="absolute top-full left-0 mt-1 z-30 w-72 bg-card border border-border rounded-xl shadow-card overflow-hidden">
+              {savedScenarios.map((s) => {
+                const active = s.id === selectedScenarioId
+                return (
+                  <div
+                    key={s.id}
+                    className={`flex items-center gap-1 transition-colors ${active ? 'bg-primary/10' : 'hover:bg-surface'}`}
+                  >
+                    <button
+                      onClick={() => { onSelectScenario?.(s.id); setPlanDropdownOpen(false) }}
+                      className="flex-1 text-left px-3 py-2 min-w-0"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className={`text-xs font-medium truncate ${active ? 'text-primary' : 'text-text_primary'}`}>{s.name}</span>
+                        <span className="text-xs font-semibold tabular-nums ml-2 shrink-0">{(s.margin * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="flex gap-3 mt-0.5 text-[10px] text-text_secondary tabular-nums">
+                        <span>${s.price}</span>
+                        <span>E→F {s.passRate}%</span>
+                        <span>F→P {s.payoutRate}%</span>
+                        <span>${s.avgPayout} avg</span>
+                      </div>
+                    </button>
+                    {onDuplicateScenario && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDuplicateScenario(s.id); setPlanDropdownOpen(false) }}
+                        className="p-1.5 mr-2 rounded text-text_secondary hover:text-text_primary transition-colors shrink-0"
+                        title="Duplicate"
+                      >
+                        <CopyIcon className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+              {/* Add Plan */}
+              <button
+                onClick={() => { handleSaveStart(); setPlanDropdownOpen(false) }}
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-white bg-[#1E3A5F] hover:bg-[#254b78] transition-colors rounded-b-xl"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Plan
+              </button>
+            </div>
           )}
-          <div className="text-right pl-4 border-l border-white/20">
-            <span className="text-[10px] uppercase tracking-wide text-white/60">Cost / Acct</span>
-            <div className="text-lg font-semibold text-white/80">{fmt(m.totalCost)}</div>
+        </div>
+      )}
+
+      {/* Hero margin bar */}
+      <div className={`${barColor} text-white rounded-xl px-5 py-4`}>
+        {/* Top row: margin + actions */}
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-xs font-medium text-white/70 uppercase tracking-wide">Margin</span>
+            <div className="text-3xl font-bold leading-tight">{pct(m.priceMargin)}</div>
           </div>
-          <div className="text-right pl-4 border-l border-white/20">
-            <span className="text-[10px] uppercase tracking-wide text-white/60">Net / Acct</span>
-            <div className="text-lg font-semibold">{fmt(m.netRevenue)}</div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleCopy}
+              className={`p-2 rounded-md bg-white/10 hover:bg-white/20 transition-colors ${copied ? 'text-green-300' : 'text-white'}`}
+              title="Copy summary"
+            >
+              {copied ? <Check className="w-4 h-4" /> : <CopyIcon className="w-4 h-4" />}
+            </button>
+            {onSaveScenario && !isSaving && (
+              <button onClick={handleSaveStart} className="px-3 py-1.5 rounded-md bg-white/15 hover:bg-white/25 text-sm font-medium text-white transition-colors">
+                Save
+              </button>
+            )}
+            {/* Desktop: Cost & Net inline */}
+            <div className="hidden md:flex items-center gap-3">
+              <div className="text-right pl-4 border-l border-white/20">
+                <span className="text-[10px] uppercase tracking-wide text-white/60">Cost / Acct</span>
+                <div className="text-lg font-semibold text-white/80">{fmt(m.totalCost)}</div>
+              </div>
+              <div className="text-right pl-4 border-l border-white/20">
+                <span className="text-[10px] uppercase tracking-wide text-white/60">Net / Acct</span>
+                <div className="text-lg font-semibold">{fmt(m.netRevenue)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* Mobile: Cost & Net stacked below */}
+        <div className="flex md:hidden flex-col gap-1 mt-3 pt-3 border-t border-white/15">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-white/60">Cost / Acct</span>
+            <span className="text-sm font-semibold text-white/80">{fmt(m.totalCost)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-white/60">Net / Acct</span>
+            <span className="text-sm font-semibold">{fmt(m.netRevenue)}</span>
           </div>
         </div>
       </div>
+
+      {/* Inline save row */}
+      {isSaving && (
+        <div className="flex items-center gap-2">
+          <input
+            autoFocus
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            onFocus={(e) => e.target.select()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveConfirm()
+              if (e.key === 'Escape') handleSaveCancel()
+            }}
+            placeholder="Plan name"
+            className="flex-1 bg-card border border-border rounded-lg text-sm text-text_primary px-3 py-1.5 outline-none focus:border-primary placeholder:text-text_secondary/50"
+          />
+          <button
+            onClick={handleSaveConfirm}
+            disabled={!saveName.trim()}
+            className="px-3 py-1.5 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-40 hover:bg-primary/90 transition-colors"
+          >
+            Save
+          </button>
+          <button
+            onClick={handleSaveCancel}
+            className="px-3 py-1.5 rounded-lg border border-border text-text_secondary text-sm hover:text-text_primary transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Two-column metrics row */}
       <div className="grid grid-cols-2 gap-4">
